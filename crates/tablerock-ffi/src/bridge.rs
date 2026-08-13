@@ -5991,15 +5991,7 @@ impl TableRockBridge {
         let (edge, direction, target_schema, target_table, target_column) = candidate;
         let (type_schema, type_name, key_column_count) = self
             .runtime
-            .block_on(driver.postgres_relation_browse_target(
-                &edge.from_schema,
-                &edge.from_table,
-                &edge.from_column,
-                &edge.to_schema,
-                &edge.to_table,
-                &edge.to_column,
-                direction == "inbound",
-            ))?
+            .block_on(driver.postgres_relation_browse_target(&edge, direction == "inbound"))?
             .map_err(|error| BridgeError::rejected("relation-browse-type", error.to_string()))?
             .ok_or_else(|| {
                 BridgeError::rejected("relation-browse-type", "related column type is unavailable")

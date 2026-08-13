@@ -287,28 +287,15 @@ impl DriverSession for SessionSlot {
 
     fn postgres_relation_browse_target<'a>(
         &'a self,
-        from_schema: &'a str,
-        from_table: &'a str,
-        from_column: &'a str,
-        to_schema: &'a str,
-        to_table: &'a str,
-        to_column: &'a str,
+        edge: &'a tablerock_core::RelationshipEdge,
         browse_source: bool,
-    ) -> DriverFuture<'a, Result<Option<(String, String, u32)>, AdapterError>> {
+    ) -> DriverFuture<'a, Result<crate::adapter::PostgresRelationBrowseTarget, AdapterError>> {
         Box::pin(async move {
             let guard = self.state.read().await;
             match &*guard {
                 SessionState::Open(session) => {
                     session
-                        .postgres_relation_browse_target(
-                            from_schema,
-                            from_table,
-                            from_column,
-                            to_schema,
-                            to_table,
-                            to_column,
-                            browse_source,
-                        )
+                        .postgres_relation_browse_target(edge, browse_source)
                         .await
                 }
                 SessionState::Closed => Err(AdapterError::new(

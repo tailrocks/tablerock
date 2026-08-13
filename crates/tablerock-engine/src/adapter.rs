@@ -25,6 +25,7 @@ use crate::{
 };
 
 pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub type PostgresRelationBrowseTarget = Option<(String, String, u32)>;
 
 #[derive(Clone)]
 pub struct MutationApplyControl {
@@ -645,23 +646,10 @@ pub trait DriverSession: Send + Sync {
     /// edge. Returned type schema/name are raw identifiers for caller quoting.
     fn postgres_relation_browse_target<'a>(
         &'a self,
-        from_schema: &'a str,
-        from_table: &'a str,
-        from_column: &'a str,
-        to_schema: &'a str,
-        to_table: &'a str,
-        to_column: &'a str,
+        edge: &'a tablerock_core::RelationshipEdge,
         browse_source: bool,
-    ) -> DriverFuture<'a, Result<Option<(String, String, u32)>, AdapterError>> {
-        let _ = (
-            from_schema,
-            from_table,
-            from_column,
-            to_schema,
-            to_table,
-            to_column,
-            browse_source,
-        );
+    ) -> DriverFuture<'a, Result<PostgresRelationBrowseTarget, AdapterError>> {
+        let _ = (edge, browse_source);
         Box::pin(async {
             Err(AdapterError::new(
                 self.engine(),
@@ -1108,27 +1096,13 @@ impl DriverSession for PostgresSession {
 
     fn postgres_relation_browse_target<'a>(
         &'a self,
-        from_schema: &'a str,
-        from_table: &'a str,
-        from_column: &'a str,
-        to_schema: &'a str,
-        to_table: &'a str,
-        to_column: &'a str,
+        edge: &'a tablerock_core::RelationshipEdge,
         browse_source: bool,
-    ) -> DriverFuture<'a, Result<Option<(String, String, u32)>, AdapterError>> {
+    ) -> DriverFuture<'a, Result<PostgresRelationBrowseTarget, AdapterError>> {
         Box::pin(async move {
-            PostgresSession::relation_browse_target(
-                self,
-                from_schema,
-                from_table,
-                from_column,
-                to_schema,
-                to_table,
-                to_column,
-                browse_source,
-            )
-            .await
-            .map_err(map_postgres)
+            PostgresSession::relation_browse_target(self, edge, browse_source)
+                .await
+                .map_err(map_postgres)
         })
     }
 

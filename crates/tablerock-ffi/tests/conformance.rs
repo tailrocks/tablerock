@@ -260,24 +260,19 @@ impl DriverSession for FixedPageSession {
 
     fn postgres_relation_browse_target<'a>(
         &'a self,
-        from_schema: &'a str,
-        from_table: &'a str,
-        from_column: &'a str,
-        to_schema: &'a str,
-        to_table: &'a str,
-        to_column: &'a str,
+        edge: &'a RelationshipEdge,
         browse_source: bool,
     ) -> DriverFuture<'a, Result<Option<(String, String, u32)>, AdapterError>> {
         Box::pin(async move {
             if browse_source {
                 assert_eq!(
                     (
-                        from_schema,
-                        from_table,
-                        from_column,
-                        to_schema,
-                        to_table,
-                        to_column,
+                        edge.from_schema.as_str(),
+                        edge.from_table.as_str(),
+                        edge.from_column.as_str(),
+                        edge.to_schema.as_str(),
+                        edge.to_table.as_str(),
+                        edge.to_column.as_str(),
                     ),
                     ("billing", "invoices", "user_id", "public", "users", "id")
                 );

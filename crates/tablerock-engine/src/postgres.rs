@@ -1066,12 +1066,7 @@ impl PostgresSession {
     /// selected cell cannot represent their full relation identity.
     pub async fn relation_browse_target(
         &self,
-        from_schema: &str,
-        from_table: &str,
-        from_column: &str,
-        to_schema: &str,
-        to_table: &str,
-        to_column: &str,
+        edge: &tablerock_core::RelationshipEdge,
         browse_source: bool,
     ) -> Result<Option<(String, String, u32)>, PostgresError> {
         let row = self
@@ -1100,12 +1095,12 @@ impl PostgresSession {
                    AND tn.nspname = $4 AND tc.relname = $5 AND ta.attname = $6 \
                  ORDER BY con.conname LIMIT 1",
                 &[
-                    &from_schema,
-                    &from_table,
-                    &from_column,
-                    &to_schema,
-                    &to_table,
-                    &to_column,
+                    &edge.from_schema,
+                    &edge.from_table,
+                    &edge.from_column,
+                    &edge.to_schema,
+                    &edge.to_table,
+                    &edge.to_column,
                 ],
             )
             .await
