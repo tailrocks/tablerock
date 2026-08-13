@@ -176,5 +176,6 @@ if [[ -n "$removed" ]]; then
 fi
 
 "$REPO_ROOT/scripts/test-native-source-verifier.sh"
+"$REPO_ROOT/scripts/verify-native-liquid-glass.sh"
 
 echo "native source ownership gate passed"

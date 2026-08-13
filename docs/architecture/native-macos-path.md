@@ -15,11 +15,12 @@ The Mac App Store is outside the first program.
 ## Native ownership
 
 The design language is **Liquid Glass on macOS 26 Tahoe and later** (decision
-2026-07-18): glass for the toolbar/sidebar/transient control layer, opaque
-content surfaces for grids and editors, one glass cluster per region, tint
-only on primary actions. macOS 27 removes the compatibility opt-out, so no
-legacy-material mode is carried. The full design mapping lives in
-[docs/product/native-macos.md](../product/native-macos.md).
+2026-07-18): system-owned glass controls and transient chrome, system sidebar
+material, and opaque content surfaces for grids, editors, inspectors, and
+review bodies. Production currently needs no custom `glassEffect`; semantic
+badges use opaque tint and text/icon identity. macOS 27 removes the
+compatibility opt-out, so no legacy-material mode is carried. The full design
+mapping lives in [docs/product/native-macos.md](../product/native-macos.md).
 
 ```text
 SwiftUI App / WindowGroup / Commands / Settings

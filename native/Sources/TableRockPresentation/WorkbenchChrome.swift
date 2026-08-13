@@ -411,6 +411,9 @@ struct WorkbenchStatusBar: View {
 /// Environment Halo: production, staging, and development remain unmistakable
 /// without relying on color alone.
 struct EnvironmentSafetyBadge: View {
+  @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+  @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
   let model: WorkbenchPresentationStore
 
   var body: some View {
@@ -438,13 +441,24 @@ struct EnvironmentSafetyBadge: View {
       .foregroundStyle(isProduction ? Color.orange : Color.green)
       .padding(.horizontal, 7)
       .padding(.vertical, 3)
-      // Chrome halo capsule (Tahoe glass); not a content surface.
-      .glassEffect(.regular.interactive())
+      .background(
+        (isProduction ? Color.orange : Color.green).opacity(highContrast ? 0.18 : 0.11),
+        in: .capsule
+      )
+      .overlay {
+        if highContrast {
+          Capsule().stroke(.primary, lineWidth: 1.5)
+        }
+      }
       .accessibilityElement(children: .combine)
       .accessibilityLabel(
         "Environment halo \(haloWord), \(environment), safety \(safety)"
       )
       .accessibilityIdentifier("environment.halo")
     }
+  }
+
+  private var highContrast: Bool {
+    differentiateWithoutColor || colorSchemeContrast == .increased
   }
 }
