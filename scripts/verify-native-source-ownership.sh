@@ -105,6 +105,7 @@ development_condition = "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
 end
 RUBY
 
+mkdir -p "$REPO_ROOT/target"
 actual_fixture_symbols="$(mktemp "$REPO_ROOT/target/native-fixture-symbols.XXXXXX")"
 cleanup() {
   rm -f -- "$actual_fixture_symbols"
