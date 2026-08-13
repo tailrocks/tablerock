@@ -6,10 +6,10 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-#[cfg(unix)]
+#[cfg(all(unix, not(test)))]
 use std::os::fd::AsFd;
 
-#[cfg(unix)]
+#[cfg(all(unix, not(test)))]
 use nix::sys::termios::{LocalFlags, SetArg, tcgetattr, tcsetattr};
 
 use ratatui_core::terminal::Terminal;
