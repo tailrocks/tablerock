@@ -84,8 +84,8 @@ private struct ObjectWorkbenchHeader: View {
           }
         }
         Text(contextDetail)
-          .font(.caption2)
-          .foregroundStyle(.primary)
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(Color(nsColor: .labelColor))
           .lineLimit(1)
       }
       Spacer(minLength: 8)
