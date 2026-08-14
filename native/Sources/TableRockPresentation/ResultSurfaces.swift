@@ -172,7 +172,8 @@ private struct ResultUtilityRail: View {
     .controlSize(.small)
     .padding(.horizontal, 10)
     .frame(height: 38)
-    .background(Color(nsColor: .controlBackgroundColor))
+    .foregroundStyle(Color.white)
+    .background(Color.black)
     .overlay(alignment: .bottom) { Divider() }
   }
 }
@@ -474,8 +475,8 @@ struct NativeValueInspector: View {
   private var header: some View {
     HStack {
       Text("INSPECTOR")
-        .font(.system(size: 10, weight: .bold))
-        .foregroundStyle(.secondary)
+        .font(.caption.weight(.bold))
+        .foregroundStyle(Color.white)
       Spacer()
       Button {
         model.selectedCell = nil
@@ -500,8 +501,8 @@ struct NativeValueInspector: View {
             .lineLimit(2)
             .accessibilityIdentifier("value.inspector.column")
           Text(typeFact)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.white)
             .accessibilityLabel(typeFact)
             .accessibilityIdentifier("value.inspector.kind")
         }
@@ -551,13 +552,13 @@ struct NativeValueInspector: View {
       if rowDetails.isEmpty {
         Text("No additional columns")
           .font(.caption)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Color.white)
       } else {
         ForEach(rowDetails) { detail in
           VStack(alignment: .leading, spacing: 2) {
             Text(detail.column.name)
-              .font(.caption)
-              .foregroundStyle(.secondary)
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(Color.white)
               .accessibilityLabel(
                 "\(detail.column.name), "
                   + GridCellPresentation.project(detail.cell).accessibilityValue
@@ -579,7 +580,7 @@ struct NativeValueInspector: View {
         .accessibilityIdentifier("value.inspector.details")
       Text(metadataFact)
         .font(.caption2.monospaced())
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.white)
         .textSelection(.enabled)
         .accessibilityIdentifier("value.inspector.metadata")
 
@@ -598,7 +599,7 @@ struct NativeValueInspector: View {
           "JSON tree unavailable — payload is not valid JSON within tree bounds. Text and hex remain."
         )
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.white)
         .accessibilityIdentifier("value.inspector.tree.unavailable")
       }
 
@@ -621,7 +622,7 @@ struct NativeValueInspector: View {
               .fontWeight(.medium)
             if let value = treeRow.value {
               Text(value)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white)
                 .lineLimit(4)
             }
           }
@@ -640,16 +641,17 @@ struct NativeValueInspector: View {
     VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 6) {
         Text("HEX")
-          .font(.caption2.weight(.semibold))
+          .font(.caption.weight(.bold))
           .tracking(0.4)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Color.white)
         Text("\(cell.bytes.count) B")
-          .font(.caption2.monospacedDigit())
-          .foregroundStyle(.secondary)
+          .font(.caption.weight(.bold).monospacedDigit())
+          .foregroundStyle(Color.white)
       }
       // Always-visible compact hex preserves binary inspection and fixture audits.
       Text(hexLinear.isEmpty ? "Empty" : hexLinear)
-        .font(.system(.caption, design: .monospaced))
+        .font(.system(.title3, design: .monospaced, weight: .heavy))
+        .foregroundStyle(Color(nsColor: .labelColor))
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("value.inspector.hex")
@@ -669,7 +671,7 @@ struct NativeValueInspector: View {
       } else if !hexDump.isEmpty, hexDump.contains("\n") {
         Text(hexDump)
           .font(.system(.caption2, design: .monospaced))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Color.white)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
           .accessibilityIdentifier("value.inspector.hex.dump")
@@ -679,9 +681,9 @@ struct NativeValueInspector: View {
 
   private func sectionLabel(_ title: String) -> some View {
     Text(title)
-      .font(.caption2.weight(.semibold))
+      .font(.caption.weight(.bold))
       .tracking(0.4)
-      .foregroundStyle(.secondary)
+      .foregroundStyle(Color.white)
   }
 
   private func copyToPasteboard(_ string: String) {

@@ -22,6 +22,7 @@ final class TableRockAppUITests: XCTestCase {
     ] {
       let app = launch(scenario: "success", environment: [fixture: "1"])
       app.windows["window.workbench"].hover()
+      var appOwnedIssues: [String] = []
       try app.performAccessibilityAudit(for: .all) { issue in
         // macOS exposes its empty system Touch Bar as an application sibling but
         // gives it no public AppKit labeling surface. Keep every app-owned issue fatal.
@@ -44,8 +45,25 @@ final class TableRockAppUITests: XCTestCase {
             issue.element?.children(matching: .group)
               .matching(NSPredicate(format: "label == %@", label)).count == 1
           }
-        return systemTouchBarIssue || systemFullScreenGlyphIssue || labeledSwiftUISplitWrapper
+        // AppKit owns the automatically inserted toolbar overflow popup and exposes
+        // no application labeling hook for it. Match its exact system signature.
+        let systemToolbarOverflow =
+          issue.auditType == .sufficientElementDescription
+          && issue.element?.elementType == .popUpButton
+          && issue.element?.label == "more toolbar items"
+        let systemIssue =
+          systemTouchBarIssue || systemFullScreenGlyphIssue || labeledSwiftUISplitWrapper
+          || systemToolbarOverflow
+        if !systemIssue {
+          appOwnedIssues.append(
+            "\(String(describing: issue.auditType)): "
+              + (issue.element?.debugDescription ?? "unknown element"))
+        }
+        return true
       }
+      XCTAssertTrue(
+        appOwnedIssues.isEmpty,
+        "Accessibility audit failed:\n\(appOwnedIssues.joined(separator: "\n"))")
       app.terminate()
     }
   }

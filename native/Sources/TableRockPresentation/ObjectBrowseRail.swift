@@ -177,11 +177,12 @@ private struct ObjectFilterToken: View {
     HStack(spacing: 5) {
       Text(text)
         .font(.caption.weight(.semibold))
-        .foregroundStyle(Color(nsColor: .labelColor))
+        .foregroundStyle(Color(nsColor: .windowBackgroundColor))
         .lineLimit(1)
       Button(action: remove) {
         Image(systemName: "xmark")
           .font(.system(size: 7, weight: .bold))
+          .foregroundStyle(Color(nsColor: .windowBackgroundColor))
       }
       .buttonStyle(.plain)
       .disabled(disabled)
@@ -189,7 +190,7 @@ private struct ObjectFilterToken: View {
     }
     .padding(.horizontal, 7)
     .frame(height: 24)
-    .background(Color.accentColor.opacity(0.1), in: .rect(cornerRadius: 6))
+    .background(Color(nsColor: .labelColor), in: .rect(cornerRadius: 6))
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("object.filter.active")
     .accessibilityLabel(text)
