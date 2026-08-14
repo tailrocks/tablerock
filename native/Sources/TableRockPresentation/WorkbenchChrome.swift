@@ -177,6 +177,7 @@ struct WorkbenchContextStrip: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 32)
+        .foregroundStyle(.primary)
       }
       .buttonStyle(.glass)
       .help("Switch database connection")
