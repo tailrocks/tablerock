@@ -175,7 +175,10 @@ private struct ObjectFilterToken: View {
 
   var body: some View {
     HStack(spacing: 5) {
-      Text(text).lineLimit(1)
+      Text(text)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color(nsColor: .labelColor))
+        .lineLimit(1)
       Button(action: remove) {
         Image(systemName: "xmark")
           .font(.system(size: 7, weight: .bold))
