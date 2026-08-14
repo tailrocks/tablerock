@@ -511,7 +511,11 @@ mod tests {
 
     use super::*;
 
-    const TIMEOUT: Duration = Duration::from_secs(5);
+    // This is a process-level PTY deadline, not the latency assertion. Cold CI
+    // runners can spend several seconds scheduling the child before its first
+    // frame; the test still requires that frame before it sends Ctrl-C and
+    // verifies prompt exit plus exact terminal restoration.
+    const TIMEOUT: Duration = Duration::from_secs(30);
 
     #[derive(Clone, Copy)]
     enum TestFault {
