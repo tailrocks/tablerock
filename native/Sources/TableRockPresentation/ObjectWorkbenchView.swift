@@ -85,7 +85,7 @@ private struct ObjectWorkbenchHeader: View {
         }
         Text(contextDetail)
           .font(.caption2)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.primary)
           .lineLimit(1)
       }
       Spacer(minLength: 8)
