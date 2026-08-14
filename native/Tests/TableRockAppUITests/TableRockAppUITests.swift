@@ -70,7 +70,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(app.descendants(matching: .any)["value.inspector.row-details"].exists)
     XCTAssertEqual(
       app.descendants(matching: .any)["value.inspector.kind"].value as? String,
-      "TEXT · NOT NULL")
+      "UUID · NOT NULL")
     XCTAssertTrue(app.descendants(matching: .any)["object.section"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["workbench.status"].exists)
     XCTAssertEqual(
