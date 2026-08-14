@@ -282,8 +282,8 @@ struct WorkbenchStatusBar: View {
             .font(.caption2.weight(.bold).monospaced())
             .accessibilityIdentifier("workbench.status.operation")
           Text(factLine)
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
+            .font(.caption.weight(.semibold).monospacedDigit())
+            .foregroundStyle(Color(nsColor: .labelColor))
             .lineLimit(1)
             .truncationMode(.middle)
             .textSelection(.enabled)
@@ -332,6 +332,8 @@ struct WorkbenchStatusBar: View {
 
       Divider().frame(height: 16)
       Text("\(tab.resultTable?.rows.count ?? 0) rows")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color(nsColor: .labelColor))
         .monospacedDigit()
       if let summary = tab.summary {
         Text(summary)
@@ -348,13 +350,19 @@ struct WorkbenchStatusBar: View {
         "\(tab.filters.count + (tab.rawWhere == nil ? 0 : 1)) filters",
         systemImage: "line.3.horizontal.decrease"
       )
+      .font(.caption.weight(.semibold))
+      .foregroundStyle(Color(nsColor: .labelColor))
       Label("\(tab.resultTable?.columns.count ?? 0) columns", systemImage: "rectangle.split.3x1")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color(nsColor: .labelColor))
       HStack(spacing: 3) {
         Button(action: {}) { Image(systemName: "chevron.left") }
           .buttonStyle(.plain)
           .disabled(true)
           .accessibilityLabel("Previous page")
         Text(tab.nextStartRow == nil ? "1 / 1" : "1 / …")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(Color(nsColor: .labelColor))
           .monospacedDigit()
         Button {
           Task { await model.loadMoreObjectRows() }
@@ -390,7 +398,7 @@ struct WorkbenchStatusBar: View {
     } else {
       Label("NO CHANGES", systemImage: "checkmark")
         .font(.caption2.weight(.semibold))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color(nsColor: .labelColor))
     }
   }
 }
