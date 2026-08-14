@@ -282,7 +282,7 @@ struct WorkbenchStatusBar: View {
             .font(.caption2.weight(.bold).monospaced())
             .accessibilityIdentifier("workbench.status.operation")
           Text(factLine)
-            .font(.callout.weight(.bold).monospacedDigit())
+            .font(.title3.weight(.heavy).monospacedDigit())
             .foregroundStyle(Color(nsColor: .labelColor))
             .lineLimit(1)
             .truncationMode(.middle)
@@ -332,7 +332,7 @@ struct WorkbenchStatusBar: View {
 
       Divider().frame(height: 16)
       Text("\(tab.resultTable?.rows.count ?? 0) rows")
-        .font(.callout.weight(.bold))
+        .font(.title3.weight(.heavy))
         .foregroundStyle(Color(nsColor: .labelColor))
         .monospacedDigit()
       if let summary = tab.summary {
@@ -350,10 +350,10 @@ struct WorkbenchStatusBar: View {
         "\(tab.filters.count + (tab.rawWhere == nil ? 0 : 1)) filters",
         systemImage: "line.3.horizontal.decrease"
       )
-      .font(.callout.weight(.bold))
+      .font(.title3.weight(.heavy))
       .foregroundStyle(Color(nsColor: .labelColor))
       Label("\(tab.resultTable?.columns.count ?? 0) columns", systemImage: "rectangle.split.3x1")
-        .font(.callout.weight(.bold))
+        .font(.title3.weight(.heavy))
         .foregroundStyle(Color(nsColor: .labelColor))
       HStack(spacing: 3) {
         Button(action: {}) { Image(systemName: "chevron.left") }
@@ -361,7 +361,7 @@ struct WorkbenchStatusBar: View {
           .disabled(true)
           .accessibilityLabel("Previous page")
         Text(tab.nextStartRow == nil ? "1 / 1" : "1 / …")
-          .font(.callout.weight(.bold))
+          .font(.title3.weight(.heavy))
           .foregroundStyle(Color(nsColor: .labelColor))
           .monospacedDigit()
         Button {
