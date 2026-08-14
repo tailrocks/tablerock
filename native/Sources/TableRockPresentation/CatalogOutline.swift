@@ -24,7 +24,10 @@ struct CatalogOutline: NSViewRepresentable {
     outline.delegate = context.coordinator
     outline.dataSource = context.coordinator
     outline.headerView = nil
-    outline.rowSizeStyle = .small
+    // Keep the row geometry large enough for the high-contrast 18 pt catalog label.
+    // A small row clips the rendered/accessibility frame back to 16 pt even though
+    // the text field's font is larger.
+    outline.rowSizeStyle = .large
     outline.allowsMultipleSelection = false
     outline.autosaveExpandedItems = false
     outline.setAccessibilityLabel("Database catalog")
