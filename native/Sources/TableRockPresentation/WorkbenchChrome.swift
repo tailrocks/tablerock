@@ -165,9 +165,11 @@ struct WorkbenchContextStrip: View {
           VStack(alignment: .leading, spacing: 0) {
             Text(model.activeProfile?.name ?? model.connectedEngine)
               .font(.caption.weight(.semibold))
+              .foregroundStyle(Color.white)
+              .background(Color.black)
             Text(model.activeProfile?.context ?? model.connectedEngine.uppercased())
-              .font(.caption2)
-              .foregroundStyle(.primary)
+              .font(.caption.weight(.bold))
+              .statusMetricStyle()
           }
           if model.activeProductionWarning {
             Text("PRODUCTION")
@@ -280,20 +282,22 @@ struct WorkbenchStatusBar: View {
         HStack(spacing: 8) {
           Text(operationWord)
             .font(.caption2.weight(.bold).monospaced())
+            .statusMetricStyle()
             .accessibilityIdentifier("workbench.status.operation")
-          Text(factLine)
+          Label("Details", systemImage: "info.circle")
             .font(.title3.weight(.heavy).monospacedDigit())
-            .foregroundStyle(Color(nsColor: .labelColor))
+            .statusMetricStyle()
             .lineLimit(1)
-            .truncationMode(.middle)
-            .textSelection(.enabled)
+            .help(factLine)
             .accessibilityIdentifier("workbench.status.facts")
+            .accessibilityLabel("Workbench status details")
             .accessibilityValue(factLine)
           Spacer(minLength: 0)
           changeStatus
           if model.activeProductionWarning {
             Text("HALO PRODUCTION")
               .font(.caption2.weight(.bold))
+              .statusMetricStyle()
               .accessibilityLabel("Production environment")
           }
         }
@@ -331,14 +335,18 @@ struct WorkbenchStatusBar: View {
       .accessibilityIdentifier("object.section")
 
       Divider().frame(height: 16)
-      Text("\(tab.resultTable?.rows.count ?? 0) rows")
+      Label("\(tab.resultTable?.rows.count ?? 0) rows", systemImage: "list.number")
         .font(.title3.weight(.heavy))
-        .foregroundStyle(Color(nsColor: .labelColor))
+        .statusMetricStyle()
         .monospacedDigit()
       if let summary = tab.summary {
-        Text(summary)
-          .foregroundStyle(Color(nsColor: .textColor))
+        Label("Details", systemImage: "info.circle")
+          .font(.title3.weight(.heavy).monospacedDigit())
+          .statusMetricStyle()
           .lineLimit(1)
+          .help(summary)
+          .accessibilityLabel("Object summary")
+          .accessibilityValue(summary)
       }
       if tab.isRunning, tab.resultTable != nil || tab.redisView != nil {
         ProgressView()
@@ -351,10 +359,10 @@ struct WorkbenchStatusBar: View {
         systemImage: "line.3.horizontal.decrease"
       )
       .font(.title3.weight(.heavy))
-      .foregroundStyle(Color(nsColor: .labelColor))
+      .statusMetricStyle()
       Label("\(tab.resultTable?.columns.count ?? 0) columns", systemImage: "rectangle.split.3x1")
         .font(.title3.weight(.heavy))
-        .foregroundStyle(Color(nsColor: .labelColor))
+        .statusMetricStyle()
       HStack(spacing: 3) {
         Button(action: {}) { Image(systemName: "chevron.left") }
           .buttonStyle(.plain)
@@ -362,7 +370,7 @@ struct WorkbenchStatusBar: View {
           .accessibilityLabel("Previous page")
         Text(tab.nextStartRow == nil ? "1 / 1" : "1 / …")
           .font(.title3.weight(.heavy))
-          .foregroundStyle(Color(nsColor: .labelColor))
+          .statusMetricStyle()
           .monospacedDigit()
         Button {
           Task { await model.loadMoreObjectRows() }
@@ -398,8 +406,24 @@ struct WorkbenchStatusBar: View {
     } else {
       Label("NO CHANGES", systemImage: "checkmark")
         .font(.caption2.weight(.semibold))
-        .foregroundStyle(Color(nsColor: .labelColor))
+        .statusMetricStyle()
     }
+  }
+}
+
+struct StatusMetricStyle: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .foregroundStyle(Color(nsColor: .windowBackgroundColor))
+      .padding(.horizontal, 6)
+      .padding(.vertical, 2)
+      .background(Color(nsColor: .labelColor), in: Capsule())
+  }
+}
+
+extension View {
+  func statusMetricStyle() -> some View {
+    modifier(StatusMetricStyle())
   }
 }
 

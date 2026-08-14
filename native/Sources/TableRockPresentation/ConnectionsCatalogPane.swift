@@ -62,8 +62,8 @@ struct ConnectionsCatalogPane: View {
           .lineLimit(1)
         Spacer()
         Text(model.connectedEngine.uppercased())
-          .font(.caption2.monospaced())
-          .foregroundStyle(.secondary)
+          .font(.caption.weight(.bold).monospaced())
+          .foregroundStyle(Color(nsColor: .labelColor))
       }
       .padding(.horizontal, 12)
       .padding(.bottom, 6)
@@ -124,8 +124,9 @@ struct ConnectionsCatalogPane: View {
         Spacer()
         if let elapsed = model.sessionHealth?.elapsedMillis {
           Text("\(elapsed) ms")
+            .font(.caption.weight(.bold))
             .monospacedDigit()
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color(nsColor: .labelColor))
         }
         Button {
           Task { await model.browse() }

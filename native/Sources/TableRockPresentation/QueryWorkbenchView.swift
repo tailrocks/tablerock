@@ -70,8 +70,10 @@ private struct QueryWorkbenchHeader: View {
       }
       Spacer(minLength: 8)
       Text(caretChip)
-        .font(.caption2.monospaced())
-        .foregroundStyle(Color(nsColor: .textColor))
+        .font(.title3.weight(.heavy).monospaced())
+        .statusMetricStyle()
+        .lineLimit(1)
+        .truncationMode(.middle)
         .accessibilityIdentifier("query.editor.metrics")
         .accessibilityValue(caretChip)
       if model.activeProductionWarning {
@@ -255,8 +257,8 @@ private struct QueryResultPlane: View {
             .accessibilityLabel("Running query")
         }
         Text(queryStatus)
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(tab.queryError == nil ? Color.secondary : Color.red)
+          .font(.title3.weight(.heavy).monospacedDigit())
+          .statusMetricStyle()
           .lineLimit(1)
           .truncationMode(.middle)
           .textSelection(.enabled)

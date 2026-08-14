@@ -24,7 +24,10 @@ struct CatalogOutline: NSViewRepresentable {
     outline.delegate = context.coordinator
     outline.dataSource = context.coordinator
     outline.headerView = nil
-    outline.rowSizeStyle = .small
+    // Keep the row geometry large enough for the high-contrast 18 pt catalog label.
+    // A small row clips the rendered/accessibility frame back to 16 pt even though
+    // the text field's font is larger.
+    outline.rowSizeStyle = .large
     outline.allowsMultipleSelection = false
     outline.autosaveExpandedItems = false
     outline.setAccessibilityLabel("Database catalog")
@@ -179,6 +182,10 @@ struct CatalogOutline: NSViewRepresentable {
         cell.identifier = identifier
         let label = NSTextField(labelWithString: "")
         label.lineBreakMode = .byTruncatingTail
+        label.font = .systemFont(ofSize: 18, weight: .heavy)
+        label.drawsBackground = true
+        label.backgroundColor = .labelColor
+        label.textColor = .windowBackgroundColor
         label.translatesAutoresizingMaskIntoConstraints = false
         let image = NSImageView()
         image.imageScaling = .scaleProportionallyDown
@@ -207,10 +214,8 @@ struct CatalogOutline: NSViewRepresentable {
       let selected = outlineView.selectedRow == outlineView.row(forItem: node)
       cell.imageView?.contentTintColor =
         selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
-      cell.textField?.textColor =
-        selected
-        ? .alternateSelectedControlTextColor
-        : node.isState ? .secondaryLabelColor : .textColor
+      cell.textField?.backgroundColor = .labelColor
+      cell.textField?.textColor = .windowBackgroundColor
       cell.setAccessibilityLabel(
         node.isState
           ? "Catalog state \(node.title)"
