@@ -68,7 +68,7 @@ jobs:
 
       - name: Install script prerequisites
         run: |
-          test "$(rg --version | head -n 1)" = "ripgrep 15.2.0"
+          test "$(rg --version | awk 'NR == 1 { print $2 }')" = "15.2.0"
           test "$(op --version)" = "2.35.0"
           op read --help | grep -F -- '--no-newline'
           op --help | grep -F -- '--account'
