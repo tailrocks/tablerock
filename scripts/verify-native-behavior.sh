@@ -126,7 +126,7 @@ start_clickhouse() {
         [ "$i" -eq 45 ] && { cat "$SERVICE_ROOT/clickhouse.log" >&2; exit 1; }
     done
     clickhouse client --host 127.0.0.1 --port "$ch_tcp_port" --multiquery --query \
-        "CREATE DATABASE db; CREATE USER u IDENTIFIED WITH plaintext_password BY 'secret'; GRANT ALL ON db.* TO u; GRANT SHOW ON db.* TO u; GRANT TABLE ENGINE ON MergeTree TO u;"
+        "CREATE DATABASE db; CREATE USER u IDENTIFIED WITH plaintext_password BY 'secret'; GRANT ALL ON db.* TO u; GRANT SHOW ON db.* TO u; GRANT SELECT ON system.databases TO u; GRANT SELECT ON system.tables TO u; GRANT SELECT ON system.dictionaries TO u; GRANT SELECT ON system.columns TO u; GRANT TABLE ENGINE ON MergeTree TO u;"
 }
 
 clickhouse_exec() {

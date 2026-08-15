@@ -93,6 +93,11 @@ jobs:
       - name: Verify native source ownership
         run: ./scripts/verify-native-source-ownership.sh
 
+      - name: Run named live Swift bridge tests
+        run: |
+          set -o pipefail
+          ./scripts/verify-native-behavior.sh | tee artifacts/native-live-bridge.log
+
       - name: Run canonical Xcode nightly plan
         run: |
           mkdir -p artifacts
@@ -105,11 +110,6 @@ jobs:
             -resultBundlePath artifacts/TableRock-Nightly.xcresult \
             CODE_SIGN_IDENTITY=- \
             | tee artifacts/xcodebuild-nightly.log
-
-      - name: Run named live Swift bridge tests
-        run: |
-          set -o pipefail
-          ./scripts/verify-native-behavior.sh | tee artifacts/native-live-bridge.log
 
       - name: Archive and verify unsigned Release shape
         run: |
