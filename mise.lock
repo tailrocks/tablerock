@@ -104,13 +104,6 @@ checksum = "sha256:b75c287b89df1fbfe033a98df058a94cd1f5119dab6ff56e4916e5a1597c7
 url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.140/cargo-nextest-0.9.140-x86_64-pc-windows-msvc.tar.gz"
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/467472280"
 
-[[tools.clickhouse]]
-version = "26.7.3.19-stable"
-backend = "vfox:mise-plugins/vfox-clickhouse"
-
-[tools.clickhouse."platforms.macos-arm64"]
-url = "https://github.com/ClickHouse/ClickHouse/releases/download/v26.7.3.19-stable/clickhouse-macos-aarch64"
-
 [[tools."github:EmbarkStudios/cargo-deny"]]
 version = "0.20.2"
 backend = "github:EmbarkStudios/cargo-deny"
@@ -312,20 +305,6 @@ url_api = "https://api.github.com/repos/yonaskolb/XcodeGen/releases/assets/47886
 checksum = "sha256:4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
 url = "https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip"
 url_api = "https://api.github.com/repos/yonaskolb/XcodeGen/releases/assets/478866069"
-
-[[tools.postgres]]
-version = "18.6"
-backend = "vfox:mise-plugins/vfox-postgres"
-
-[tools.postgres."platforms.macos-arm64"]
-url = "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.gz"
-
-[[tools.redis]]
-version = "8.10.0"
-backend = "vfox:mise-plugins/vfox-redis"
-
-[tools.redis."platforms.macos-arm64"]
-url = "https://download.redis.io/releases/redis-8.10.0.tar.gz"
 
 [[tools.rust]]
 version = "1.97.1"
