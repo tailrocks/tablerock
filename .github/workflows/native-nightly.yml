@@ -95,6 +95,7 @@ jobs:
 
       - name: Run named live Swift bridge tests
         run: |
+          mkdir -p artifacts
           set -o pipefail
           ./scripts/verify-native-behavior.sh | tee artifacts/native-live-bridge.log
 
