@@ -42,6 +42,12 @@ jobs:
           install_args: rust aqua:1password/cli aqua:BurntSushi/ripgrep
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up native database services
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          working_directory: .github/native-services
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
