@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ${{ 'ubuntu-26.04' }}
+    runs-on: ${{ vars.VELNOR_AUTOMATIC_LANES == 'github' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 10
     outputs:
       version: ${{ steps.tag.outputs.version }}
@@ -181,7 +181,7 @@ jobs:
 
   package-record:
     needs: [validate, build-cli, build-app]
-    runs-on: ${{ 'ubuntu-26.04' }}
+    runs-on: ${{ vars.VELNOR_AUTOMATIC_LANES == 'github' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 15
     outputs:
       version: ${{ needs.validate.outputs.version }}
@@ -257,7 +257,7 @@ jobs:
 
   publish:
     needs: [package-record, sign-cli, sign-app]
-    runs-on: ${{ 'ubuntu-26.04' }}
+    runs-on: ${{ vars.VELNOR_AUTOMATIC_LANES == 'github' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 15
     permissions:
       contents: write
