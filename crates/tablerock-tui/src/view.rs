@@ -3,17 +3,16 @@
 use ratatui_core::text::Line;
 use ratatui_core::{
     layout::{Constraint, Direction, Layout, Position, Rect},
-    style::Style,
     terminal::Frame,
 };
 use termrock::{
     interaction::HitRegion,
+    style::PanelChrome,
     widgets::{
         Action, ActionBar, ActionBarState, CompletionCandidate, CompletionMenu, CompletionMenuSize,
-        CompletionMenuState, Form, FormField, FormSection, FormState, GridCell, GridColumn,
-        GridRow, Panel, PanelEmphasis, StatusBar, StatusBarState, StatusSlot, Tab, Tabs, TabsState,
-        TextArea, TextAreaState, Tree, TreeNode, TreeNodeStatus, TreeState, VirtualGrid,
-        VirtualGridState, render_hint_bar,
+        CompletionMenuState, Field, Fieldset, Form, FormState, GridCell, GridColumn, GridRow,
+        Panel, StatusBar, StatusBarState, StatusRegion, StatusSlot, Tab, Tabs, TabsState, TextArea,
+        TextAreaState, Tree, TreeNode, TreeState, VirtualGrid, VirtualGridState, render_hint_bar,
     },
 };
 
@@ -136,9 +135,9 @@ fn render_export_progress_overlay(model: &Model, frame: &mut Frame<'_>, area: Re
     } else {
         "[Enter] Close"
     };
-    let panel = Panel::new(&model.theme)
+    let panel = Panel::new(&model.system)
         .title("Export progress and outcome")
-        .emphasis(PanelEmphasis::Focused);
+        .emphasis(PanelChrome::Focused);
     frame.render_widget(&panel, popup);
     if popup.width > 2 && popup.height > 2 {
         let lines = [
@@ -523,9 +522,9 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             format!("Paste find=>replace[=>all][=>i] then Submit [{confirm_buffer}]"),
         ),
     };
-    let panel = Panel::new(&model.theme)
+    let panel = Panel::new(&model.system)
         .title(title)
-        .emphasis(PanelEmphasis::Focused);
+        .emphasis(PanelChrome::Focused);
     frame.render_widget(&panel, area);
     if area.height > 2 && area.width > 2 {
         let inner = Rect {
@@ -543,9 +542,9 @@ fn render_password_prompt_overlay(model: &Model, frame: &mut Frame<'_>, area: Re
     let Some(prompt) = model.password_prompt() else {
         return;
     };
-    let panel = Panel::new(&model.theme)
+    let panel = Panel::new(&model.system)
         .title("Password required")
-        .emphasis(PanelEmphasis::Focused);
+        .emphasis(PanelChrome::Focused);
     frame.render_widget(&panel, area);
     if area.height > 2 && area.width > 2 {
         let inner = Rect {
@@ -569,20 +568,10 @@ fn render_tabs(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
     } else {
         "Connections"
     };
-    let tabs = [Tab {
-        id: ShellTab::Connections,
-        label,
-        glyph: None,
-        active: true,
-        enabled: true,
-    }];
-    let mut state = TabsState {
-        selected: Some(ShellTab::Connections),
-        hovered: None,
-        focused: model.focus() == Some(FocusRegion::Tabs),
-        regions: Vec::new(),
-    };
-    frame.render_stateful_widget(Tabs::new(&tabs, &model.theme).gap(1), area, &mut state);
+    let tabs = [Tab::new(ShellTab::Connections, label).active(true)];
+    let mut state = TabsState::new().with_selected(ShellTab::Connections);
+    state.set_focused(model.focus() == Some(FocusRegion::Tabs));
+    frame.render_stateful_widget(Tabs::new(&tabs, &model.system).gap(1), area, &mut state);
     for region in state.regions {
         geometry.push(ShellTarget::Focus(FocusRegion::Tabs), region.area);
     }
@@ -2864,11 +2853,11 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
             }
         };
     let mut state = ActionBarState {
-        focused: (model.focus() == Some(FocusRegion::Actions)).then_some(model.selected_action()),
+        cursor: (model.focus() == Some(FocusRegion::Actions)).then_some(model.selected_action()),
         regions: Vec::new(),
     };
     frame.render_stateful_widget(
-        ActionBar::new(&actions, &model.theme).gap(" "),
+        ActionBar::new(&actions, &model.system).gap(" "),
         area,
         &mut state,
     );
@@ -2898,7 +2887,7 @@ fn render_hints(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         let _ = keymap.disable(ShellKeyAction::ActionNext);
         let _ = keymap.disable(ShellKeyAction::Quit);
     }
-    render_hint_bar(frame, area, &keymap.hint_spans(), &model.theme);
+    render_hint_bar(frame, area, &keymap.hint_spans(), &model.system);
 }
 
 fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
@@ -2907,31 +2896,24 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mu
     } else {
         "Footer"
     };
-    let left = [StatusSlot {
-        id: StatusId::State,
-        content: if model.engine_resync_required() {
+    let left = [StatusSlot::new(
+        StatusId::State,
+        if model.engine_resync_required() {
             "Resync required"
         } else {
             "Ready"
         },
-        priority: 0,
-        min_width: 5,
-        enabled: true,
-        style: Style::new(),
-        hover_style: None,
-    }];
-    let right = [StatusSlot {
-        id: StatusId::Focus,
-        content: focus,
-        priority: 0,
-        min_width: 6,
-        enabled: true,
-        style: Style::new(),
-        hover_style: None,
-    }];
+    )
+    .priority(0)
+    .min_width(5)
+    .region(StatusRegion::Left)];
+    let right = [StatusSlot::new(StatusId::Focus, focus)
+        .priority(0)
+        .min_width(6)
+        .region(StatusRegion::Right)];
     let mut state = StatusBarState::default();
     frame.render_stateful_widget(
-        StatusBar::new(&left, &right, &model.theme).alpha(1.0),
+        StatusBar::new(&left, &right, &model.system).alpha(1.0),
         area,
         &mut state,
     );
@@ -2953,12 +2935,12 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
     } else {
         None
     };
-    let panel = Panel::new(&model.theme)
+    let panel = Panel::new(&model.system)
         .title(focused_title.as_deref().unwrap_or(title))
         .emphasis(if focused {
-            PanelEmphasis::Focused
+            PanelChrome::Focused
         } else {
-            PanelEmphasis::Normal
+            PanelChrome::Normal
         });
     frame.render_widget(&panel, area);
     if area.height <= 2 || area.width <= 2 {
@@ -3049,20 +3031,19 @@ fn render_workbench_catalog(
         .zip(depths.iter())
         .zip(expanded.iter())
         .zip(branches.iter())
-        .map(|((((id, label), depth), exp), branch)| TreeNode {
-            id: id.clone(),
-            label: Line::from(label.as_str()),
-            trailing: None,
-            depth: *depth,
-            branch: *branch,
-            expanded: *exp,
-            enabled: true,
-            status: TreeNodeStatus::Ready,
+        .map(|((((id, label), depth), exp), branch)| {
+            let mut node = TreeNode::new(id.clone(), Line::from(label.as_str()), *depth);
+            node.branch = *branch;
+            node.expanded = *exp;
+            node
         })
         .collect();
     let mut state = TreeState::new(selected_key);
-    state.set_focused(model.focus() == Some(FocusRegion::Catalog));
-    frame.render_stateful_widget(&Tree::new(&tree_nodes, &model.theme), content, &mut state);
+    frame.render_stateful_widget(
+        &Tree::new(&tree_nodes, &model.system).focused(model.focus() == Some(FocusRegion::Catalog)),
+        content,
+        &mut state,
+    );
 }
 
 fn render_connection_tree(model: &Model, frame: &mut Frame<'_>, area: Rect, status: Option<&str>) {
@@ -3126,24 +3107,21 @@ fn render_connection_tree(model: &Model, frame: &mut Frame<'_>, area: Rect, stat
         .zip(depths.iter())
         .map(|((id, label), depth)| {
             let is_group = id.starts_with("g:");
-            TreeNode {
-                id: id.clone(),
-                label: Line::from(label.as_str()),
-                trailing: None,
-                depth: *depth,
-                branch: is_group,
-                expanded: is_group
-                    && !model
-                        .profiles()
-                        .is_group_collapsed(id.strip_prefix("g:").unwrap_or("")),
-                enabled: true,
-                status: TreeNodeStatus::Ready,
-            }
+            let mut node = TreeNode::new(id.clone(), Line::from(label.as_str()), *depth);
+            node.branch = is_group;
+            node.expanded = is_group
+                && !model
+                    .profiles()
+                    .is_group_collapsed(id.strip_prefix("g:").unwrap_or(""));
+            node
         })
         .collect();
     let mut state = TreeState::new(selected_key);
-    state.set_focused(model.focus() == Some(FocusRegion::Content));
-    frame.render_stateful_widget(&Tree::new(&tree_nodes, &model.theme), content, &mut state);
+    frame.render_stateful_widget(
+        &Tree::new(&tree_nodes, &model.system).focused(model.focus() == Some(FocusRegion::Content)),
+        content,
+        &mut state,
+    );
 }
 
 /// Build TermRock Tree projection: group branches + profile leaves.
@@ -3253,140 +3231,81 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     let startup_sql = editor.field_value(EditorField::StartupSql);
 
     let general = [
-        FormField::new(
-            EditorField::Engine,
-            Line::from("Engine"),
-            Line::from(engine.as_str()),
-        ),
-        FormField::new(
-            EditorField::Name,
-            Line::from("Name"),
-            Line::from(name.as_str()),
-        )
-        .required(true),
-        FormField::new(
-            EditorField::Group,
-            Line::from("Group"),
-            Line::from(group.as_str()),
-        ),
-        FormField::new(
+        Field::new(EditorField::Engine, "Engine", engine.as_str()),
+        Field::new(EditorField::Name, "Name", name.as_str()).required(true),
+        Field::new(EditorField::Group, "Group", group.as_str()),
+        Field::new(
             EditorField::Environment,
-            Line::from("Environment"),
-            Line::from(environment.as_str()),
+            "Environment",
+            environment.as_str(),
         ),
     ];
     let connection = [
-        FormField::new(
-            EditorField::Host,
-            Line::from("Host"),
-            Line::from(host.as_str()),
-        )
-        .required(true),
-        FormField::new(
-            EditorField::Port,
-            Line::from("Port"),
-            Line::from(port.as_str()),
-        )
-        .required(true),
-        FormField::new(
-            EditorField::Database,
-            Line::from("Database"),
-            Line::from(database.as_str()),
-        ),
+        Field::new(EditorField::Host, "Host", host.as_str()).required(true),
+        Field::new(EditorField::Port, "Port", port.as_str()).required(true),
+        Field::new(EditorField::Database, "Database", database.as_str()),
     ];
     let credentials = [
-        FormField::new(
-            EditorField::Username,
-            Line::from("Username"),
-            Line::from(username.as_str()),
-        ),
-        FormField::new(
-            EditorField::Password,
-            Line::from("Password"),
-            Line::from(password.as_str()),
-        ),
-        FormField::new(
+        Field::new(EditorField::Username, "Username", username.as_str()),
+        Field::new(EditorField::Password, "Password", password.as_str()),
+        Field::new(
             EditorField::PasswordSource,
-            Line::from("Password source"),
-            Line::from(password_source.as_str()),
+            "Password source",
+            password_source.as_str(),
         ),
     ];
-    let tls = [FormField::new(
+    let tls = [Field::new(
         EditorField::TlsMode,
-        Line::from("TLS mode"),
-        Line::from(tls_mode.as_str()),
+        "TLS mode",
+        tls_mode.as_str(),
     )];
     let ssh = [
-        FormField::new(
-            EditorField::SshHost,
-            Line::from("SSH bastion"),
-            Line::from(ssh_host.as_str()),
-        ),
-        FormField::new(
-            EditorField::SshPort,
-            Line::from("SSH port"),
-            Line::from(ssh_port.as_str()),
-        ),
-        FormField::new(
-            EditorField::SshUsername,
-            Line::from("SSH user"),
-            Line::from(ssh_username.as_str()),
-        ),
-        FormField::new(
+        Field::new(EditorField::SshHost, "SSH bastion", ssh_host.as_str()),
+        Field::new(EditorField::SshPort, "SSH port", ssh_port.as_str()),
+        Field::new(EditorField::SshUsername, "SSH user", ssh_username.as_str()),
+        Field::new(
             EditorField::SshPassword,
-            Line::from("SSH password/passphrase"),
-            Line::from(ssh_password.as_str()),
+            "SSH password/passphrase",
+            ssh_password.as_str(),
         ),
-        FormField::new(
+        Field::new(
             EditorField::SshPrivateKey,
-            Line::from("SSH private key"),
-            Line::from(ssh_private_key.as_str()),
+            "SSH private key",
+            ssh_private_key.as_str(),
         ),
-        FormField::new(
+        Field::new(
             EditorField::SshKnownHostsPath,
-            Line::from("known_hosts path"),
-            Line::from(ssh_known_hosts.as_str()),
+            "known_hosts path",
+            ssh_known_hosts.as_str(),
         ),
-        FormField::new(
+        Field::new(
             EditorField::SshUseAgent,
-            Line::from("SSH auth mode"),
-            Line::from(ssh_use_agent.as_str()),
+            "SSH auth mode",
+            ssh_use_agent.as_str(),
         ),
     ];
-    let startup = [FormField::new(
+    let startup = [Field::new(
         EditorField::StartupSql,
-        Line::from("Startup SQL (!write/!danger prefixes)"),
-        Line::from(startup_sql.as_str()),
+        "Startup SQL (!write/!danger prefixes)",
+        startup_sql.as_str(),
     )];
     let sections = [
-        FormSection {
-            title: Line::from("General"),
-            fields: &general,
-        },
-        FormSection {
-            title: Line::from("Connection"),
-            fields: &connection,
-        },
-        FormSection {
-            title: Line::from("Credentials"),
-            fields: &credentials,
-        },
-        FormSection {
-            title: Line::from("TLS"),
-            fields: &tls,
-        },
-        FormSection {
-            title: Line::from("SSH tunnel"),
-            fields: &ssh,
-        },
-        FormSection {
-            title: Line::from("Startup actions"),
-            fields: &startup,
-        },
+        Fieldset::new("General", &general),
+        Fieldset::new("Connection", &connection),
+        Fieldset::new("Credentials", &credentials),
+        Fieldset::new("TLS", &tls),
+        Fieldset::new("SSH tunnel", &ssh),
+        Fieldset::new("Startup actions", &startup),
     ];
-    let mut state = FormState::new(Some(editor.focused));
-    state.set_active(model.focus() == Some(FocusRegion::Content));
-    frame.render_stateful_widget(&Form::new(&sections, &model.theme), form_area, &mut state);
+    let mut state = FormState::new();
+    state.set_accepts_input(model.focus() == Some(FocusRegion::Content));
+    frame.render_stateful_widget(
+        &Form::new(&sections, &model.system).focused_field(
+            (model.focus() == Some(FocusRegion::Content)).then_some(&editor.focused),
+        ),
+        form_area,
+        &mut state,
+    );
 }
 
 fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _status: Option<&str>) {
@@ -3485,14 +3404,14 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
             height: body.height.saturating_sub(editor_area.height),
         };
         let mut ta = TextAreaState::new(editor.text());
-        ta.set_focused(editor.focused() && model.focus() == Some(FocusRegion::Content));
+        ta.set_accepts_input(editor.focused() && model.focus() == Some(FocusRegion::Content));
         // Approximate cursor: place at end when offset matches text length.
         if editor.cursor() < editor.text().len() {
             // Leave default end-of-document placement when we cannot map cheaply.
             let _ = editor.cursor();
         }
         frame.render_stateful_widget(
-            &TextArea::new(&model.theme).title("SQL"),
+            &TextArea::new(&model.system).title("SQL"),
             editor_area,
             &mut ta,
         );
@@ -3516,7 +3435,7 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
             };
             let mut menu_state = CompletionMenuState::new(session.selected_id.clone());
             frame.render_stateful_widget(
-                &CompletionMenu::new(&candidates, &model.theme, editor_area, anchor)
+                &CompletionMenu::new(&candidates, &model.system, editor_area, anchor)
                     .preferred_size(CompletionMenuSize {
                         width: 36,
                         height: 8,
@@ -3710,8 +3629,8 @@ fn render_data_grid(
             .saturating_add(grid.drafts.inserts.len() as u64),
     };
     let mut state = VirtualGridState::new();
-    state.set_focused(model.focus() == Some(FocusRegion::Content));
-    let widget = VirtualGrid::new(&columns, &rows, &model.theme)
+    let widget = VirtualGrid::new(&columns, &rows, &model.system)
+        .focused(model.focus() == Some(FocusRegion::Content))
         .total_rows(total.max(1))
         .gutter(true)
         .header(true);
