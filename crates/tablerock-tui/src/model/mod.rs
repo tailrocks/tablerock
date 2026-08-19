@@ -21,11 +21,12 @@ pub mod saved_query;
 pub mod structure_ddl;
 pub mod workbench;
 
+use ratatui_core::layout::Rect;
 use termrock::{
-    Theme,
     input::{KeyCode, KeyEvent, KeyModifiers},
-    interaction::{FocusOutcome, FocusRing},
+    interaction::{FocusGraph, FocusNode},
     keymap::Keymap,
+    style::DesignSystem,
 };
 
 use crate::{ShellGeometry, ShellKeyAction, default_keymap, effect::RequestToken};
@@ -52,11 +53,6 @@ pub enum FocusRegion {
     Content,
     Actions,
     Footer,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FocusScope {
-    Shell,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -952,11 +948,11 @@ impl FocusRegion {
 
 #[derive(Debug)]
 pub struct Model {
-    pub(crate) theme: Theme,
+    pub(crate) system: DesignSystem,
     keymap: Keymap<ShellKeyAction>,
     width: u16,
     height: u16,
-    focus: FocusRing<FocusRegion, FocusScope>,
+    focus: FocusGraph<FocusRegion>,
     action: ActionId,
     screen: Screen,
     terminal_focused: bool,
@@ -981,11 +977,11 @@ pub struct Model {
 impl Default for Model {
     fn default() -> Self {
         Self {
-            theme: Theme::default(),
+            system: DesignSystem::default(),
             keymap: default_keymap(),
             width: 0,
             height: 0,
-            focus: initial_focus_ring(),
+            focus: initial_focus_graph(),
             action: ActionId::Open,
             screen: Screen::Connections,
             terminal_focused: true,
@@ -1085,10 +1081,7 @@ impl Model {
     }
 
     pub(crate) fn request_focus(&mut self, focus: FocusRegion) -> bool {
-        matches!(
-            self.focus.request_focus(focus),
-            FocusOutcome::Changed { .. }
-        )
+        self.focus.request_focus(focus).changed()
     }
 
     pub(crate) fn move_focus(&mut self, reverse: bool) -> bool {
@@ -1104,7 +1097,7 @@ impl Model {
                 KeyModifiers::NONE
             },
         );
-        matches!(self.focus.handle_key(key), FocusOutcome::Changed { .. })
+        self.focus.handle_key(key).changed()
     }
 
     pub(crate) fn reconcile_focus_frame(&mut self, geometry: &ShellGeometry) -> bool {
@@ -1116,14 +1109,14 @@ impl Model {
             Screen::Workbench => &FocusRegion::WORKBENCH_ORDER,
         };
         let enabled = self.layout_mode() != LayoutMode::TooSmall;
-        self.focus.register_order(
-            FocusScope::Shell,
-            order
-                .iter()
-                .copied()
-                .map(|id| (id, geometry.focus_area(id), enabled)),
-        );
-        matches!(self.focus.reconcile(), FocusOutcome::Changed { .. })
+        for (index, id) in order.iter().copied().enumerate() {
+            let mut node = FocusNode::leaf(id, Rect::default());
+            node.area = geometry.focus_area(id);
+            node.enabled = enabled;
+            node.tab_index = index as i32;
+            self.focus.register(node);
+        }
+        self.focus.reconcile().changed()
     }
 
     pub(crate) const fn set_action(&mut self, action: ActionId) {
@@ -1234,13 +1227,13 @@ impl Model {
     }
 }
 
-fn initial_focus_ring() -> FocusRing<FocusRegion, FocusScope> {
-    let mut focus = FocusRing::new(FocusScope::Shell, Some(FocusRegion::Context));
+fn initial_focus_graph() -> FocusGraph<FocusRegion> {
+    let mut focus = FocusGraph::new();
     focus.begin_frame();
-    focus.register_order(
-        FocusScope::Shell,
-        FocusRegion::CONNECTION_ORDER.map(|id| (id, None, true)),
-    );
+    for (index, id) in FocusRegion::CONNECTION_ORDER.into_iter().enumerate() {
+        focus.register(FocusNode::leaf(id, Rect::default()).tab_index(index as i32));
+    }
+    let _ = focus.request_focus(FocusRegion::Context);
     let _ = focus.reconcile();
     focus
 }
