@@ -104,6 +104,10 @@ checksum = "sha256:b75c287b89df1fbfe033a98df058a94cd1f5119dab6ff56e4916e5a1597c7
 url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.140/cargo-nextest-0.9.140-x86_64-pc-windows-msvc.tar.gz"
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/467472280"
 
+[[tools."cargo:cargo-zigbuild"]]
+version = "0.23.0"
+backend = "cargo:cargo-zigbuild"
+
 [[tools."github:EmbarkStudios/cargo-deny"]]
 version = "0.20.2"
 backend = "github:EmbarkStudios/cargo-deny"
@@ -313,3 +317,35 @@ backend = "core:rust"
 [tools.rust.options]
 components = "clippy,rustfmt"
 profile = "minimal"
+
+[[tools.zig]]
+version = "0.16.0"
+backend = "core:zig"
+
+[tools.zig."platforms.linux-arm64"]
+checksum = "sha256:ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17"
+url = "https://ziglang.org/download/0.16.0/zig-aarch64-linux-0.16.0.tar.xz"
+
+[tools.zig."platforms.linux-arm64-musl"]
+checksum = "sha256:ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17"
+url = "https://ziglang.org/download/0.16.0/zig-aarch64-linux-0.16.0.tar.xz"
+
+[tools.zig."platforms.linux-x64"]
+checksum = "sha256:70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
+url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+
+[tools.zig."platforms.linux-x64-musl"]
+checksum = "sha256:70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
+url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+
+[tools.zig."platforms.macos-arm64"]
+checksum = "sha256:b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489"
+url = "https://ziglang.org/download/0.16.0/zig-aarch64-macos-0.16.0.tar.xz"
+
+[tools.zig."platforms.macos-x64"]
+checksum = "sha256:0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7"
+url = "https://ziglang.org/download/0.16.0/zig-x86_64-macos-0.16.0.tar.xz"
+
+[tools.zig."platforms.windows-x64"]
+checksum = "sha256:68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e"
+url = "https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip"
