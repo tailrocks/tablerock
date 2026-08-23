@@ -13,7 +13,9 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ${{ vars.VELNOR_AUTOMATIC_LANES == 'github' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
+    # Tag pushes are post-merge push events: the Velnor fleet rejects those
+    # (merged_push_occupancy), so push routes to the GitHub lane.
+    runs-on: ${{ github.event_name == 'push' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 10
     outputs:
       version: ${{ steps.tag.outputs.version }}
@@ -40,7 +42,9 @@ jobs:
 
   build-cli:
     needs: validate
-    runs-on: ${{ matrix.os }}
+    # macOS legs stay GitHub-hosted (Velnor is Linux-only); Linux legs route to
+    # the GitHub lane on push (merged_push_occupancy) and Velnor otherwise.
+    runs-on: ${{ matrix.os == 'github-linux' && 'ubuntu-26.04' || matrix.os == 'velnor-linux' && fromJSON('["self-hosted","velnor-target-mvp"]') || matrix.os }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -50,8 +54,8 @@ jobs:
         include:
           - {target: aarch64-apple-darwin, os: macos-26, builder: cargo}
           - {target: x86_64-apple-darwin, os: macos-26, builder: cargo}
-          - {target: aarch64-unknown-linux-gnu, os: ubuntu-26.04, builder: zigbuild, build_target: aarch64-unknown-linux-gnu.2.17}
-          - {target: x86_64-unknown-linux-gnu, os: ubuntu-26.04, builder: zigbuild, build_target: x86_64-unknown-linux-gnu.2.17}
+          - {target: aarch64-unknown-linux-gnu, os: "${{ github.event_name == 'push' && 'github-linux' || 'velnor-linux' }}", builder: zigbuild, build_target: aarch64-unknown-linux-gnu.2.17}
+          - {target: x86_64-unknown-linux-gnu, os: "${{ github.event_name == 'push' && 'github-linux' || 'velnor-linux' }}", builder: zigbuild, build_target: x86_64-unknown-linux-gnu.2.17}
     env:
       CARGO_INCREMENTAL: "0"
       RUSTC_WRAPPER: sccache
@@ -181,7 +185,7 @@ jobs:
 
   package-record:
     needs: [validate, build-cli, build-app]
-    runs-on: ${{ vars.VELNOR_AUTOMATIC_LANES == 'github' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
+    runs-on: ${{ github.event_name == 'push' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 15
     outputs:
       version: ${{ needs.validate.outputs.version }}
@@ -257,7 +261,7 @@ jobs:
 
   publish:
     needs: [package-record, sign-cli, sign-app]
-    runs-on: ${{ vars.VELNOR_AUTOMATIC_LANES == 'github' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
+    runs-on: ${{ github.event_name == 'push' && 'ubuntu-26.04' || fromJSON('["self-hosted","velnor-target-mvp"]') }}
     timeout-minutes: 15
     permissions:
       contents: write
