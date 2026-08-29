@@ -15,7 +15,10 @@ idiomatic_version_file_enable_tools = ["rust"]
 lockfile = true
 
 [tasks.ci]
-run = "cargo check --workspace --all-targets --locked"
+depends = ["build", "test", "lint", "fmt"]
+
+[tasks.build]
+run = "cargo build --workspace --all-targets --locked"
 
 [tasks.test]
 run = "cargo nextest run -p tablerock-core -p tablerock-persistence -p tablerock-tui -p tablerock-cli -p tablerock-ffi --locked"
