@@ -1,88 +1,11 @@
-# AGENTS.md
+# Rules
 
-Operating rules for anyone (human or agent) changing this repository.
-`CONTRIBUTING.md` holds the human-facing summary; this file is authoritative
-where they overlap.
+- `actions/runner` (https://github.com/actions/runner) is the protocol source of truth: before writing runner protocol code (job messages, broker, expressions, credentials, run-service, or timeline), find and match its equivalent logic exactly. Never guess.
+- No legacy code. Finish every migration: remove old paths completely—no compatibility shims, aliases, or deprecation periods. Breaking changes are preferred.
+- This is a research project. It is unsafe and expected to contain breaking changes; never treat it as production-ready. Break things when needed and deliver new implementations fast.
+- Always apply these principles:
+  - Judge work by correctness, consistency, and project fit. Never defer a known-wrong state because of ROI, cost, effort, or claims that it is low-value, marginal, or an edge case.
+  - Stop only when the required change is proven impossible with the available tools or model. When uncertain, inspect, test, and measure first.
+  - Before fixing a bug, identify why the architecture permitted it and whether the same structure permits related bugs.
+  - Prefer fixes that remove the enabling condition. Use a symptom-layer patch only when the root fix is proven infeasible or belongs in a separate change, and name the deferred root cause.
 
-## Pull-request workflow
-
-- Never push directly to `main`. All changes enter `main` through a pull
-  request.
-- Keep all work for the current native goal on
-  `codex/native-design-lab-gate` and in its single pull request.
-- Never create, switch to, or publish another branch for this goal, and never
-  open a duplicate or concurrent pull request for it.
-- Keep the pull-request branch buildable through small, forward-only checkpoint
-  commits. Do not rewrite published history; repair forward.
-- These rules also apply to required TermRock changes. Jackin remains a
-  read-only reference.
-
-## Current phase
-
-Phase status lives in [`ROADMAP.md`](ROADMAP.md). Implement the roadmap phases
-through their dependency-ordered, evidence-gated checkpoints. Do not add
-behavior or a dependency before its relevant roadmap checkpoint is approved and
-its adoption requirements are defined.
-
-## Product boundary
-
-- TableRock owns PostgreSQL, ClickHouse, and Redis connection, exploration,
-  query, result, edit, history, and safety behavior.
-- The implemented clients are a Rust CLI/TUI and a native macOS application.
-- The TUI uses The Elm Architecture, TermRock, Ratatui, and Crossterm.
-- The native macOS UI uses SwiftUI/AppKit over embedded Rust through
-  synchronous UniFFI; its production distribution path is a direct notarized
-  Developer ID application.
-- Shared terminal components come from the independent
-  [`termrock`](https://github.com/tailrocks/termrock) crate; TableRock does not
-  import `jackin` product internals.
-
-## External product references
-
-TablePro, TablePlus, and Zedis may inform product ideas, workflows, interaction
-design, screen composition, and visual direction. Public screenshots and
-documentation may be used as design references, including when adapting
-commonplace native macOS patterns.
-
-Never copy, translate, or derive implementation from their source code, tests,
-or source comments. Implement behavior from this repository's requirements,
-official database documentation, selected library documentation, and direct
-tests. Do not import third-party branding or proprietary assets without clear
-permission.
-
-Record external-reference provenance in every influenced implementation commit
-and its accompanying requirement/test documentation.
-
-## Engineering
-
-- Start every dependency, toolchain, CI action, and development-tool adoption
-  from its latest stable release. Re-check before use and upgrade immediately
-  when a newer stable release exists. Exact pins protect reproducibility, not
-  legacy compatibility; refresh them forward and document any proven temporary
-  upstream constraint.
-- Prefer maintained crates and official clients over hand-written protocols.
-- The TUI application pattern is The Elm Architecture. Do not introduce
-  Component Architecture, Flux, or component-owned application state.
-- Crossterm 0.29 is the only terminal backend/input; TermRock owns terminal
-  lifecycle and reusable components.
-- PostgreSQL uses `tokio-postgres` with rustls; SSH uses `russh`.
-- The ClickHouse baseline is the official `ClickHouse/clickhouse-rs` client.
-- The Redis baseline is `redis-rs/redis-rs`; do not substitute another client
-  without an explicit architecture decision.
-- Keep database client types behind adapters and out of stable core contracts.
-- Persistence uses the local-only `turso` crate through one serialized Rust
-  async persistence actor. Never add `rusqlite`, `libsql`, or Turso Cloud sync.
-- Native macOS embeds Rust through synchronous UniFFI. Do not add a daemon,
-  local RPC, manual C ABI, WebView, or Mac App Store path.
-- Batch/page results across TUI and UniFFI boundaries.
-- Keep I/O out of TUI update/render functions.
-- Enforce read/write safety and redaction below presentation.
-- Never persist resolved 1Password values or log credentials, SQL text, or cell
-  values by default.
-- Update architecture docs, evidence, roadmap, user documentation, and tests
-  with behavioral changes.
-
-## Commits
-
-Use Conventional Commits, DCO sign-off (`git commit -s`), and push each commit
-immediately unless the operator explicitly says otherwise.
