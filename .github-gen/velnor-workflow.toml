@@ -5,11 +5,10 @@ repository = "tailrocks/tablerock"
 revision = "e05aee6de1d1614d752b4d1b1d26a49ac2c5ef91"
 
 [workflow]
-runners = "both"
-automatic_lanes = "github"
+runners = "github"
+automatic = "github"
 default_dispatch_runner = "github"
+automatic_lanes = "github"
 github_runner = "ubuntu-24.04"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
 default_branch = "main"
-runners = "github"
-automatic = "github"
