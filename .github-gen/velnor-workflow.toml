@@ -2,7 +2,7 @@ schema = 1
 
 [generator]
 repository = "tailrocks/tablerock"
-revision = "b9c3156cdb88e63c11b9e595a3e694b02238c09a"
+revision = "4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d"
 
 [workflow]
 runners = "github"
@@ -10,9 +10,36 @@ automatic = "github"
 default_dispatch_runner = "github"
 automatic_lanes = "github"
 github_runner = "ubuntu-24.04"
+macos_runner = "macos-26"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
 default_branch = "main"
 
 [policy]
 ruleset_required_status_checks = ["ci-required"]
 ruleset_external_status_checks = ["DCO"]
+
+[[units]]
+id = "rust-tablerock-ffi"
+
+[[units.products]]
+name = "release-dylib"
+task = "ffi:dylib"
+
+[[units.products]]
+name = "xcframework"
+task = "ffi:xcframework"
+
+[[units]]
+id = "swift-package-native"
+capabilities = ["xcode"]
+
+[[units.prerequisites]]
+producer = "rust-tablerock-ffi"
+product = "release-dylib"
+
+[[units]]
+id = "swift-xcodeproj-tablerock"
+
+[[units.prerequisites]]
+producer = "rust-tablerock-ffi"
+product = "xcframework"

@@ -55,12 +55,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Velnor workflow runtime
+        id: runtime
         if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@b9c3156cdb88e63c11b9e595a3e694b02238c09a
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
         with:
-          rev: b9c3156cdb88e63c11b9e595a3e694b02238c09a
+          rev: 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=b9c3156cdb88e63c11b9e595a3e694b02238c09a" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -76,7 +77,7 @@ jobs:
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: b9c3156cdb88e63c11b9e595a3e694b02238c09a
+          EXPECTED_REVISION: 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -88,19 +89,20 @@ jobs:
           policy_src="${VELNOR_WORKFLOW_PINNED_BINARY:-$src}"
           install -m 0755 "$policy_src" "$stage/velnor-workflow-policy"
           policy_revision="$("$stage/velnor-workflow-policy" --revision)"
-          [[ "$policy_revision" == "$EXPECTED_REVISION" ]] || { echo "::error::policy runtime reports revision $policy_revision, expected $EXPECTED_REVISION" >&2; exit 1; }
+          policy_closure="$("$stage/velnor-workflow-policy" --closure)"
+          [[ "$policy_closure" == "${{ steps.runtime.outputs.closure }}" ]] || { echo "::error::policy runtime reports closure $policy_closure, expected ${{ steps.runtime.outputs.closure }}" >&2; exit 1; }
           policy_digest="$(sha256sum "$stage/velnor-workflow-policy" | awk '{print $1}')"
-          jq -n --arg repository "$GITHUB_REPOSITORY" --arg revision "$EXPECTED_REVISION" --arg head_branch "${{ github.ref_name }}" --arg platform "${{ runner.os }}-${{ runner.arch }}" --arg run_id "$GITHUB_RUN_ID" --arg job_id "${{ github.job }}" --arg binary_sha256 "$digest" --arg policy_revision "$policy_revision" --arg policy_binary_sha256 "$policy_digest" '{repository: $repository, revision: $revision, head_branch: $head_branch, platform: $platform, run_id: $run_id, job_id: $job_id, binary_sha256: $binary_sha256, policy_revision: $policy_revision, policy_binary_sha256: $policy_binary_sha256}' > "$stage/manifest.json"
+          jq -n --arg repository "$GITHUB_REPOSITORY" --arg revision "$EXPECTED_REVISION" --arg closure "${{ steps.runtime.outputs.closure }}" --arg head_branch "${{ github.ref_name }}" --arg platform "${{ runner.os }}-${{ runner.arch }}" --arg run_id "$GITHUB_RUN_ID" --arg job_id "${{ github.job }}" --arg binary_sha256 "$digest" --arg policy_revision "$policy_revision" --arg policy_closure "$policy_closure" --arg policy_binary_sha256 "$policy_digest" '{repository: $repository, revision: $revision, closure: $closure, head_branch: $head_branch, platform: $platform, run_id: $run_id, job_id: $job_id, binary_sha256: $binary_sha256, policy_revision: $policy_revision, policy_closure: $policy_closure, policy_binary_sha256: $policy_binary_sha256}' > "$stage/manifest.json"
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-b9c3156cdb88e63c11b9e595a3e694b02238c09a-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
   github-rust-policy:
     name: "Rust · Rust dependency policy"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -111,7 +113,8 @@ jobs:
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
-      mbx_compat: "030fe4ced8ce"
+      mbx_enabled: true
+      mbx_compat: "430fec6f3ca8"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -131,9 +134,10 @@ jobs:
         Cargo.lock
         rust-toolchain.toml
         rust-toolchain
+      unit_admission: github
   github-rust-tablerock-cli:
     name: "Rust · tablerock-cli"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-cli,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-cli,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -145,7 +149,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
-      mbx_compat: "4f0888f59f39"
+      mbx_enabled: true
+      mbx_compat: "32c39cc2d542"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -226,9 +231,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-cli"
       cargo_net_offline: true
+      unit_dependencies: "rust-tablerock-core,rust-tablerock-engine,rust-tablerock-files,rust-tablerock-persistence,rust-tablerock-tools,rust-tablerock-tui"
+      unit_admission: github
   github-rust-tablerock-core:
     name: "Rust · tablerock-core"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-core,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-core,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -240,7 +247,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
-      mbx_compat: "3dff26bc3e43"
+      mbx_enabled: true
+      mbx_compat: "088d2ca6b187"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -266,9 +274,10 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-core"
       cargo_net_offline: true
+      unit_admission: github
   github-rust-tablerock-engine:
     name: "Rust · tablerock-engine"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-engine,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-engine,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -280,7 +289,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
-      mbx_compat: dd6ea09b5766
+      mbx_enabled: true
+      mbx_compat: "7e5d6f52b68c"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -312,9 +322,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-engine"
       cargo_net_offline: true
+      unit_dependencies: rust-tablerock-core
+      unit_admission: github
   github-rust-tablerock-ffi:
     name: "Rust · tablerock-ffi"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-ffi,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-ffi,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -326,7 +338,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
-      mbx_compat: "458226905e3f"
+      mbx_enabled: true
+      mbx_compat: "416d54349adf"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -397,9 +410,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-ffi"
       cargo_net_offline: true
+      unit_dependencies: "rust-tablerock-core,rust-tablerock-engine,rust-tablerock-files,rust-tablerock-persistence,rust-tablerock-tools"
+      unit_admission: github
   github-rust-tablerock-files:
     name: "Rust · tablerock-files"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-files,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-files,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -411,7 +426,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
-      mbx_compat: "06cff7e2a9e5"
+      mbx_enabled: true
+      mbx_compat: d5e5ba6cf5f7
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -442,9 +458,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-files"
       cargo_net_offline: true
+      unit_dependencies: rust-tablerock-core
+      unit_admission: github
   github-rust-tablerock-persistence:
     name: "Rust · tablerock-persistence"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-persistence,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-persistence,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -456,7 +474,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
-      mbx_compat: "360172ec0d43"
+      mbx_enabled: true
+      mbx_compat: eacbe87b23f6
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -506,9 +525,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-persistence"
       cargo_net_offline: true
+      unit_dependencies: rust-tablerock-core
+      unit_admission: github
   github-rust-tablerock-tools:
     name: "Rust · tablerock-tools"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-tools,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-tools,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -520,7 +541,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
-      mbx_compat: d2c828bdc61c
+      mbx_enabled: true
+      mbx_compat: "41040fd246d5"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -543,9 +565,10 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-tools"
       cargo_net_offline: true
+      unit_admission: github
   github-rust-tablerock-tui:
     name: "Rust · tablerock-tui"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-tui,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-tui,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
@@ -557,7 +580,8 @@ jobs:
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
-      mbx_compat: "77d1482f148b"
+      mbx_enabled: true
+      mbx_compat: "8b26bfa56f27"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -592,9 +616,11 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-tui"
       cargo_net_offline: true
+      unit_dependencies: rust-tablerock-core
+      unit_admission: github
   github-swift-package-native:
     name: "Swift · Apple · Swift package (native)"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
@@ -605,14 +631,18 @@ jobs:
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_runner: true
       cache_paths: "~/.swiftpm"
       cache_key_files: |
         native/Package.swift
         native/Package.resolved
         native/.swiftpm/Package.resolved
+      apple_executor: true
+      unit_dependencies: rust-tablerock-ffi
+      unit_admission: github
   github-swift-xcodeproj-tablerock:
     name: "Swift · Apple · Apple scheme (TableRock)"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-xcodeproj-tablerock,') }}
+    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-xcodeproj-tablerock,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
@@ -623,10 +653,14 @@ jobs:
       full_units: ${{ needs.plan.outputs.full_units }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
+      mise_runner: true
       cache_paths: "~/Library/Developer/Xcode/DerivedData"
       cache_key_files: |
         native/App/TableRock.xcodeproj/project.pbxproj
         native/App/TableRock.xcodeproj/xcshareddata/xcschemes/TableRock.xcscheme
+      apple_executor: true
+      unit_dependencies: rust-tablerock-ffi
+      unit_admission: github
   ci-required:
     name: ci-required
     if: ${{ always() }}
@@ -638,7 +672,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           SELECTED_UNITS: ${{ needs.plan.outputs.units }}
-          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          LANE_ADMITTED_GITHUB: ${{ github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -653,10 +687,17 @@ jobs:
           selected=",$SELECTED_UNITS,"
           if [[ "$selected" == *",rust-policy,"* ]]; then
             result="$(result_for_job github-rust-policy)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-policy did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-policy did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-policy ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-policy)"
             case "$result" in
@@ -666,10 +707,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-tablerock-cli,"* ]]; then
             result="$(result_for_job github-rust-tablerock-cli)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-tablerock-cli did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-tablerock-cli did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-tablerock-cli ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-tablerock-cli)"
             case "$result" in
@@ -679,10 +727,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-tablerock-core,"* ]]; then
             result="$(result_for_job github-rust-tablerock-core)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-tablerock-core did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-tablerock-core did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-tablerock-core ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-tablerock-core)"
             case "$result" in
@@ -692,10 +747,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-tablerock-engine,"* ]]; then
             result="$(result_for_job github-rust-tablerock-engine)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-tablerock-engine did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-tablerock-engine did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-tablerock-engine ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-tablerock-engine)"
             case "$result" in
@@ -705,10 +767,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-tablerock-ffi,"* ]]; then
             result="$(result_for_job github-rust-tablerock-ffi)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-tablerock-ffi did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-tablerock-ffi did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-tablerock-ffi ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-tablerock-ffi)"
             case "$result" in
@@ -718,10 +787,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-tablerock-files,"* ]]; then
             result="$(result_for_job github-rust-tablerock-files)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-tablerock-files did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-tablerock-files did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-tablerock-files ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-tablerock-files)"
             case "$result" in
@@ -731,10 +807,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-tablerock-persistence,"* ]]; then
             result="$(result_for_job github-rust-tablerock-persistence)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-tablerock-persistence did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-tablerock-persistence did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-tablerock-persistence ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-tablerock-persistence)"
             case "$result" in
@@ -744,10 +827,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-tablerock-tools,"* ]]; then
             result="$(result_for_job github-rust-tablerock-tools)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-tablerock-tools did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-tablerock-tools did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-tablerock-tools ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-tablerock-tools)"
             case "$result" in
@@ -757,10 +847,17 @@ jobs:
           fi
           if [[ "$selected" == *",rust-tablerock-tui,"* ]]; then
             result="$(result_for_job github-rust-tablerock-tui)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-rust-tablerock-tui did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-rust-tablerock-tui did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-rust-tablerock-tui ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-rust-tablerock-tui)"
             case "$result" in
@@ -770,10 +867,17 @@ jobs:
           fi
           if [[ "$selected" == *",swift-package-native,"* ]]; then
             result="$(result_for_job github-swift-package-native)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-swift-package-native did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-swift-package-native did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-swift-package-native ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-swift-package-native)"
             case "$result" in
@@ -783,10 +887,17 @@ jobs:
           fi
           if [[ "$selected" == *",swift-xcodeproj-tablerock,"* ]]; then
             result="$(result_for_job github-swift-xcodeproj-tablerock)"
-            case "$result" in
-              success) ;;
-              *) echo "selected CI job github-swift-xcodeproj-tablerock did not pass: $result" >&2; exit 1 ;;
-            esac
+            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+              case "$result" in
+                success) ;;
+                *) echo "selected CI job github-swift-xcodeproj-tablerock did not pass: $result" >&2; exit 1 ;;
+              esac
+            else
+              case "$result" in
+                skipped) ;;
+                *) echo "selected CI job github-swift-xcodeproj-tablerock ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+              esac
+            fi
           else
             result="$(result_for_job github-swift-xcodeproj-tablerock)"
             case "$result" in

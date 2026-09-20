@@ -14,8 +14,13 @@ zig = "0.16.0"
 idiomatic_version_file_enable_tools = ["rust"]
 lockfile = true
 
-[tasks.ci]
-run = "cargo check --workspace --all-targets --locked"
+[tasks.install]
+description = "Provision every pinned tool from mise.lock"
+run = "mise install --locked"
+
+[tasks.build]
+description = "Compile every workspace target with a real codegen build"
+run = "cargo build --workspace --all-targets --locked"
 
 [tasks.test]
 run = "cargo nextest run -p tablerock-core -p tablerock-persistence -p tablerock-tui -p tablerock-cli -p tablerock-ffi --locked"
@@ -25,3 +30,15 @@ run = "cargo clippy --workspace --all-targets --locked -- -D warnings"
 
 [tasks.fmt]
 run = "cargo fmt --all -- --check"
+
+[tasks.ci]
+description = "Local aggregate of install, build, test, lint, and fmt"
+depends = ["install", "build", "test", "lint", "fmt"]
+
+[tasks."ffi:dylib"]
+description = "Build the tablerock-ffi release dylib the Swift package links"
+run = "cargo build -p tablerock-ffi --release --locked"
+
+[tasks."ffi:xcframework"]
+description = "Package the tablerock-ffi XCFramework the Xcode app embeds"
+run = "bash scripts/build-xcframework.sh"
