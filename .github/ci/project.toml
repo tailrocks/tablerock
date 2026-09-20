@@ -15,7 +15,7 @@ limitations = ["Apple test destinations use platform defaults; review the genera
 github_runner = "ubuntu-24.04"
 velnor_labels = ["self-hosted", "velnor-target-mvp"]
 files = ["ci-main.yml", "ci-policy.yml", "ci-pr.yml", "ci-unit-rust.yml", "ci-unit-swift.yml", "maintenance.yml", "nightly.yml"]
-notes = ["Rust verification uses Mr. Boxington 1.12.0 with its GitHub cache backend and bounded snapshot keys (a key names the toolchain/image/linker compatibility class and the hashed source state, so a new source state saves a new snapshot and retention keeps generations bounded).", "Swift units render on the default executor: swift-package-native (no Apple requirement detected; if Apple-bound, declare `capabilities = [\"xcode\"]` or `[\"xcframework\"]` on a [[units]] row, otherwise ensure a Swift toolchain provisions on ubuntu-24.04)."]
+notes = ["Rust verification uses Mr. Boxington 1.12.0 with its GitHub cache backend and bounded snapshot keys (a key names the toolchain/image/linker compatibility class and the hashed source state, so a new source state saves a new snapshot and retention keeps generations bounded)."]
 
 [release]
 enabled = false
@@ -159,10 +159,11 @@ label = "Swift package (native)"
 kind = "swift"
 root = "native"
 watch = ["native/**/*.swift", "native/.swiftpm/Package.resolved", "native/Package.resolved", "native/Package.swift", "native/Sources/**", "native/Tests/**"]
-github_pr_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-github_full_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-velnor_pr_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
-velnor_full_commands = ["cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+github_pr_commands = ["mise run ffi:dylib", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+github_full_commands = ["mise run ffi:dylib", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+velnor_pr_commands = ["mise run ffi:dylib", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+velnor_full_commands = ["mise run ffi:dylib", "cd -- 'native' && swift build", "cd -- 'native' && swift test --parallel"]
+depends_on = ["rust-tablerock-ffi"]
 [unit.cache]
 key_files = ["native/Package.swift", "native/Package.resolved", "native/.swiftpm/Package.resolved"]
 paths = ["~/.swiftpm"]
@@ -173,10 +174,11 @@ label = "Apple scheme (TableRock)"
 kind = "swift"
 root = "native/App"
 watch = ["*.xcconfig", "native/App/**", "native/App/TableRock.xcodeproj/**"]
-github_pr_commands = ["cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO test"]
-github_full_commands = ["cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO test"]
-velnor_pr_commands = ["cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO test"]
-velnor_full_commands = ["cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO test"]
+github_pr_commands = ["mise run ffi:xcframework", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO test"]
+github_full_commands = ["mise run ffi:xcframework", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO test"]
+velnor_pr_commands = ["mise run ffi:xcframework", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO test"]
+velnor_full_commands = ["mise run ffi:xcframework", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO build", "cd -- 'native/App' && xcodebuild -project 'TableRock.xcodeproj' -scheme 'TableRock' CODE_SIGNING_ALLOWED=NO test"]
+depends_on = ["rust-tablerock-ffi"]
 [unit.cache]
 key_files = ["native/App/TableRock.xcodeproj/project.pbxproj", "native/App/TableRock.xcodeproj/xcshareddata/xcschemes/TableRock.xcscheme"]
 paths = ["~/Library/Developer/Xcode/DerivedData"]
