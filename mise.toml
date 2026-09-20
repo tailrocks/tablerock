@@ -34,3 +34,11 @@ run = "cargo fmt --all -- --check"
 [tasks.ci]
 description = "Local aggregate of install, build, test, lint, and fmt"
 depends = ["install", "build", "test", "lint", "fmt"]
+
+[tasks."ffi:dylib"]
+description = "Build the tablerock-ffi release dylib the Swift package links"
+run = "cargo build -p tablerock-ffi --release --locked"
+
+[tasks."ffi:xcframework"]
+description = "Package the tablerock-ffi XCFramework the Xcode app embeds"
+run = "bash scripts/build-xcframework.sh"
