@@ -6,13 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      runner:
-        description: Execution backend
-        required: false
-        default: github
-        type: choice
-        options:
-          - github
       scope:
         description: Verification scope
         required: true
@@ -45,9 +38,18 @@ jobs:
       base_sha: ${{ steps.plan.outputs.base_sha }}
       head_sha: ${{ steps.plan.outputs.head_sha }}
       units: ${{ steps.plan.outputs.units }}
+      unit_ids: ${{ steps.plan.outputs.unit_ids }}
       full_units: ${{ steps.plan.outputs.full_units }}
+      plan_digest: ${{ steps.plan.outputs.plan_digest }}
+      excluded: ${{ steps.plan.outputs.excluded }}
       rust_matrix: ${{ steps.plan.outputs.rust_matrix }}
       swift_matrix: ${{ steps.plan.outputs.swift_matrix }}
+      # Presence-only no-work marker: `planned_no_work` is `true` or absent,
+      # never `false`. Consumers MUST branch
+      # `needs.plan.outputs.planned_no_work == 'true'` for the no-work path;
+      # any other value (including absent) means the plan selected work.
+      planned_no_work: ${{ steps.plan.outputs.planned_no_work }}
+      no_work_reason: ${{ steps.plan.outputs.no_work_reason }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,12 +58,11 @@ jobs:
           persist-credentials: false
       - name: Set up Velnor workflow runtime
         id: runtime
-        if: ${{ runner.environment == 'github-hosted' }}
-        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
+        uses: tailrocks/velnor/.github/actions/setup-velnor-workflow@4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
         with:
-          rev: 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
+          rev: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
       - name: Set trusted workflow policy revision
-        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d" >> "$GITHUB_ENV"
+        run: echo "VELNOR_WORKFLOW_POLICY_REVISION=4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0" >> "$GITHUB_ENV"
       - name: Select affected units
         id: plan
         env:
@@ -69,15 +70,26 @@ jobs:
           CI_SCOPE_OVERRIDE: ${{ github.event.inputs.scope || '' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.inputs.base_sha || github.event.before || 'refs/heads/main' }}
           HEAD_SHA: ${{ github.sha }}
+          VELNOR_PROVIDERS: github-hosted
+          VELNOR_EVENT_TRUSTED: ${{ (!(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork || github.event.pull_request.user.type == 'Bot'))) && 'true' || 'false' }}
+          VELNOR_EXPECTED_WORK_FILE: .velnor-ci-expected-work/expected-work.json
         run: |
           set -euo pipefail
           if [[ -z "${CI_SCOPE_OVERRIDE:-}" ]]; then unset CI_SCOPE_OVERRIDE; fi
+          mkdir -p .velnor-ci-expected-work
           velnor-workflow plan --config .github/ci/project.toml
 
+      - name: Publish expected work
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: velnor-expected-work
+          path: .velnor-ci-expected-work/expected-work.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Prepare Velnor workflow runtime
         shell: bash
         env:
-          EXPECTED_REVISION: 4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d
+          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/velnor-workflow-runtime"
@@ -96,25 +108,27 @@ jobs:
       - name: Publish Velnor workflow runtime
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: velnor-workflow-runtime-4fa7a3a85f141a6bb95bc9bdf0eef9e3ddde165d-${{ runner.os }}-${{ runner.arch }}
+          name: velnor-workflow-runtime-4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0-${{ runner.os }}-${{ runner.arch }}
           path: ${{ runner.temp }}/velnor-workflow-runtime
           if-no-files-found: error
           retention-days: 7
-  github-rust-policy:
-    name: "Rust · Rust dependency policy"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-policy,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+  github-hosted-rust-policy:
+    name: "Rust · Rust dependency policy · github-hosted — rust-policy"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-policy"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-policy
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mbx_enabled: true
-      mbx_compat: "430fec6f3ca8"
+      mbx_compat: ef943181e867
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -134,23 +148,27 @@ jobs:
         Cargo.lock
         rust-toolchain.toml
         rust-toolchain
-      unit_admission: github
-  github-rust-tablerock-cli:
-    name: "Rust · tablerock-cli"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-cli,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
+  github-hosted-rust-tablerock-cli:
+    name: "Rust · tablerock-cli · github-hosted — rust-tablerock-cli"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-tablerock-cli"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-tablerock-cli
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "32c39cc2d542"
+      mbx_compat: b298343d03ad
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -231,24 +249,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-cli"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-tablerock-core,rust-tablerock-engine,rust-tablerock-files,rust-tablerock-persistence,rust-tablerock-tools,rust-tablerock-tui"
-      unit_admission: github
-  github-rust-tablerock-core:
-    name: "Rust · tablerock-core"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-core,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_admission: github-hosted
+      validation_phases: "fmt,clippy,test,doctest"
+  github-hosted-rust-tablerock-core:
+    name: "Rust · tablerock-core · github-hosted — rust-tablerock-core"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-tablerock-core"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-tablerock-core
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "088d2ca6b187"
+      mbx_compat: d4e2143be059
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -274,23 +297,28 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-core"
       cargo_net_offline: true
-      unit_admission: github
-  github-rust-tablerock-engine:
-    name: "Rust · tablerock-engine"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-engine,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
+      validation_phases: "fmt,clippy,test,doctest"
+  github-hosted-rust-tablerock-engine:
+    name: "Rust · tablerock-engine · github-hosted — rust-tablerock-engine"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-tablerock-engine"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-tablerock-engine
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "7e5d6f52b68c"
+      mbx_compat: "250e23a22139"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -322,24 +350,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-engine"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-tablerock-core
-      unit_admission: github
-  github-rust-tablerock-ffi:
-    name: "Rust · tablerock-ffi"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-ffi,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_admission: github-hosted
+      validation_phases: "fmt,clippy,test,doctest"
+  github-hosted-rust-tablerock-ffi:
+    name: "Rust · tablerock-ffi · github-hosted — rust-tablerock-ffi"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-tablerock-ffi"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-tablerock-ffi
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "416d54349adf"
+      mbx_compat: "94bf40bac3a3"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -410,24 +443,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-ffi"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: "rust-tablerock-core,rust-tablerock-engine,rust-tablerock-files,rust-tablerock-persistence,rust-tablerock-tools"
-      unit_admission: github
-  github-rust-tablerock-files:
-    name: "Rust · tablerock-files"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-files,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_admission: github-hosted
+      validation_phases: "fmt,clippy,test,doctest"
+  github-hosted-rust-tablerock-files:
+    name: "Rust · tablerock-files · github-hosted — rust-tablerock-files"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-tablerock-files"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-tablerock-files
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: d5e5ba6cf5f7
+      mbx_compat: c1df392aeb8e
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -458,24 +496,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-files"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-tablerock-core
-      unit_admission: github
-  github-rust-tablerock-persistence:
-    name: "Rust · tablerock-persistence"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-persistence,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_admission: github-hosted
+      validation_phases: "fmt,clippy,test,doctest"
+  github-hosted-rust-tablerock-persistence:
+    name: "Rust · tablerock-persistence · github-hosted — rust-tablerock-persistence"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-tablerock-persistence"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-tablerock-persistence
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: eacbe87b23f6
+      mbx_compat: "2c1b69460168"
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -525,24 +568,29 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-persistence"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-tablerock-core
-      unit_admission: github
-  github-rust-tablerock-tools:
-    name: "Rust · tablerock-tools"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-tools,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_admission: github-hosted
+      validation_phases: "fmt,clippy,test,doctest"
+  github-hosted-rust-tablerock-tools:
+    name: "Rust · tablerock-tools · github-hosted — rust-tablerock-tools"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-tablerock-tools"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-tablerock-tools
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "41040fd246d5"
+      mbx_compat: af02778fdb66
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -565,23 +613,28 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-tools"
       cargo_net_offline: true
-      unit_admission: github
-  github-rust-tablerock-tui:
-    name: "Rust · tablerock-tui"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',rust-tablerock-tui,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
+      unit_admission: github-hosted
+      validation_phases: "fmt,clippy,test,doctest"
+  github-hosted-rust-tablerock-tui:
+    name: "Rust · tablerock-tui · github-hosted — rust-tablerock-tui"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"rust-tablerock-tui"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-rust.yml
     with:
       unit: rust-tablerock-tui
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_tools: "aqua:nextest-rs/nextest/cargo-nextest"
       mbx_enabled: true
-      mbx_compat: "8b26bfa56f27"
+      mbx_compat: abb900da360d
       mbx_dependency_files: |
         .cargo/**
         Cargo.lock
@@ -616,298 +669,445 @@ jobs:
         rust-toolchain
       cargo_root: "crates/tablerock-tui"
       cargo_net_offline: true
+      unit_platform: linux-x64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-tablerock-core
-      unit_admission: github
-  github-swift-package-native:
-    name: "Swift · Apple · Swift package (native)"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-package-native,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_admission: github-hosted
+      validation_phases: "fmt,clippy,test,doctest"
+  github-hosted-swift-package-native:
+    name: "Swift · Apple · Swift package (native) · github-hosted — swift-package-native"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"swift-package-native"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
       unit: swift-package-native
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_runner: true
       cache_paths: "~/.swiftpm"
       cache_key_files: |
-        native/Package.swift
-        native/Package.resolved
+        .swift-version
+        .xcode-version
+        mise.lock
         native/.swiftpm/Package.resolved
+        native/Package.resolved
+        native/Package.swift
       apple_executor: true
+      unit_platform: macos-arm64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-tablerock-ffi
-      unit_admission: github
-  github-swift-xcodeproj-tablerock:
-    name: "Swift · Apple · Apple scheme (TableRock)"
-    if: ${{ always() && needs.plan.result == 'success' && contains(format(',{0},', needs.plan.outputs.units), ',swift-xcodeproj-tablerock,') && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == ''))) }}
+      unit_admission: github-hosted
+  github-hosted-swift-xcodeproj-tablerock:
+    name: "Swift · Apple · Apple scheme (TableRock) · github-hosted — swift-xcodeproj-tablerock"
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(needs.plan.outputs.units, '"unit_id":"swift-xcodeproj-tablerock"') && (true) }}
     needs: [plan]
     uses: ./.github/workflows/ci-unit-swift.yml
     with:
       unit: swift-xcodeproj-tablerock
-      lane: github
+      provider: github-hosted
       selected_units: ${{ needs.plan.outputs.units }}
+      selected_unit_ids: ${{ needs.plan.outputs.unit_ids }}
       scope: ${{ needs.plan.outputs.scope }}
       full_units: ${{ needs.plan.outputs.full_units }}
+      plan_digest: ${{ needs.plan.outputs.plan_digest }}
       base_sha: ${{ needs.plan.outputs.base_sha }}
       head_sha: ${{ needs.plan.outputs.head_sha }}
       mise_runner: true
       cache_paths: "~/Library/Developer/Xcode/DerivedData"
       cache_key_files: |
+        .swift-version
+        .xcode-version
+        mise.lock
         native/App/TableRock.xcodeproj/project.pbxproj
         native/App/TableRock.xcodeproj/xcshareddata/xcschemes/TableRock.xcscheme
       apple_executor: true
+      unit_platform: macos-arm64
+      unit_trust: untrusted-ok
       unit_dependencies: rust-tablerock-ffi
-      unit_admission: github
+      unit_admission: github-hosted
   ci-required:
     name: ci-required
-    if: ${{ always() }}
-    needs: [plan, github-rust-policy, github-rust-tablerock-cli, github-rust-tablerock-core, github-rust-tablerock-engine, github-rust-tablerock-ffi, github-rust-tablerock-files, github-rust-tablerock-persistence, github-rust-tablerock-tools, github-rust-tablerock-tui, github-swift-package-native, github-swift-xcodeproj-tablerock]
+    if: ${{ !cancelled() }}
+    needs: [plan, github-hosted-rust-policy, github-hosted-rust-tablerock-cli, github-hosted-rust-tablerock-core, github-hosted-rust-tablerock-engine, github-hosted-rust-tablerock-ffi, github-hosted-rust-tablerock-files, github-hosted-rust-tablerock-persistence, github-hosted-rust-tablerock-tools, github-hosted-rust-tablerock-tui, github-hosted-swift-package-native, github-hosted-swift-xcodeproj-tablerock]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Download Velnor workflow runtime
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: velnor-workflow-runtime-4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0-${{ runner.os }}-${{ runner.arch }}
+          path: .velnor-workflow-runtime
+      - name: Verify Velnor workflow runtime
+        shell: bash
+        env:
+          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+        run: |
+          set -euo pipefail
+          manifest=.velnor-workflow-runtime/manifest.json
+          jq -e --arg revision "$EXPECTED_REVISION" --arg repository "$GITHUB_REPOSITORY" --arg platform "${RUNNER_OS}-${RUNNER_ARCH}" --arg run_id "$GITHUB_RUN_ID" '.revision == $revision and .repository == $repository and .platform == $platform and .run_id == $run_id and (.run_id | test("^[0-9]+$")) and .job_id != "" and (.binary_sha256 | test("^[0-9a-f]{64}$")) and (.policy_binary_sha256 | test("^[0-9a-f]{64}$")) and (.closure | test("^[0-9a-f]{64}$")) and (.policy_closure | test("^[0-9a-f]{64}$"))' "$manifest" >/dev/null
+          expected="$(jq -er '.binary_sha256' "$manifest")"
+          actual="$(sha256sum .velnor-workflow-runtime/velnor-workflow | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || { echo "::error::runtime digest mismatch" >&2; exit 1; }
+          expected="$(jq -er '.policy_binary_sha256' "$manifest")"
+          actual="$(sha256sum .velnor-workflow-runtime/velnor-workflow-policy | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || { echo "::error::policy runtime digest mismatch" >&2; exit 1; }
+      - name: Add Velnor workflow runtime to PATH
+        shell: bash
+        env:
+          EXPECTED_REVISION: 4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0
+        run: |
+          set -euo pipefail
+          home="$RUNNER_TEMP/velnor-workflow-runtime-artifact"
+          install -Dm0755 .velnor-workflow-runtime/velnor-workflow "$home/bin/velnor-workflow"
+          install -Dm0755 .velnor-workflow-runtime/velnor-workflow-policy "$home/bin/velnor-workflow-policy"
+          expected_closure="$(jq -er '.policy_closure' .velnor-workflow-runtime/manifest.json)"
+          reported="$("$home/bin/velnor-workflow-policy" --closure)"
+          [[ "$reported" == "$expected_closure" ]] || { echo "::error::policy runtime reports closure $reported, expected $expected_closure" >&2; exit 1; }
+          echo "$home/bin" >> "$GITHUB_PATH"
+          echo "VELNOR_WORKFLOW_PINNED_BINARY=$home/bin/velnor-workflow-policy" >> "$GITHUB_ENV"
+      - name: Download expected work
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: velnor-expected-work
+          path: .velnor-ci-expected-work
+      - name: Download reported unit results
+        # A no-work plan runs no unit jobs, so zero result artifacts is the
+        # expected case there — and the aggregate fails a real-work plan with
+        # zero records anyway. Tolerate the empty download; never the verdict.
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: velnor-result-*
+          merge-multiple: true
+          path: .velnor-ci-results
+      - name: Collect reported unit results
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p .velnor-ci-results
+          files=(.velnor-ci-results/result-*.json)
+          for file in "${files[@]}"; do
+            if jq -e 'any(.results[]?; has("reused_from"))' "$file" >/dev/null; then
+              echo "::error::$file carries reused_from without a validate_reuse decision; render emits no reused results" >&2
+              exit 1
+            fi
+          done
+          if (( ${#files[@]} == 0 )); then
+            printf '{"results":[]}\n' > .velnor-ci-results.json
+          else
+            jq -s '{results: ([.[].results // empty] | add // [])}' "${files[@]}" > .velnor-ci-results.json
+          fi
+          echo "collected $(jq '.results | length' .velnor-ci-results.json) reported result(s) from ${#files[@]} record file(s)"
+      - name: Score expected work against reported results
+        env:
+          BASE_SHA: ${{ needs.plan.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.plan.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          velnor-workflow aggregate --expected .velnor-ci-expected-work/expected-work.json --results .velnor-ci-results.json
       - name: Validate generated stack results
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           SELECTED_UNITS: ${{ needs.plan.outputs.units }}
-          LANE_ADMITTED_GITHUB: ${{ github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.runner == 'github' || github.event.inputs.runner == 'both' || github.event.inputs.runner == '')) }}
+          PLAN_DIGEST: ${{ needs.plan.outputs.plan_digest }}
+          EXCLUDED: ${{ needs.plan.outputs.excluded }}
+          EXPECTED_CALLERS: "[{\"job_id\":\"github-hosted-rust-policy\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-policy\"},{\"job_id\":\"github-hosted-rust-tablerock-cli\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-tablerock-cli\"},{\"job_id\":\"github-hosted-rust-tablerock-core\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-tablerock-core\"},{\"job_id\":\"github-hosted-rust-tablerock-engine\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-tablerock-engine\"},{\"job_id\":\"github-hosted-rust-tablerock-ffi\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-tablerock-ffi\"},{\"job_id\":\"github-hosted-rust-tablerock-files\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-tablerock-files\"},{\"job_id\":\"github-hosted-rust-tablerock-persistence\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-tablerock-persistence\"},{\"job_id\":\"github-hosted-rust-tablerock-tools\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-tablerock-tools\"},{\"job_id\":\"github-hosted-rust-tablerock-tui\",\"provider\":\"github-hosted\",\"unit_id\":\"rust-tablerock-tui\"},{\"job_id\":\"github-hosted-swift-package-native\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-package-native\"},{\"job_id\":\"github-hosted-swift-xcodeproj-tablerock\",\"provider\":\"github-hosted\",\"unit_id\":\"swift-xcodeproj-tablerock\"}]"
+          PROVIDER_ADMITTED_GITHUB_HOSTED: ${{ true }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -z "$PLAN_DIGEST" ]]; then
+            echo "plan did not freeze a plan digest: the expected set has no identity" >&2
+            exit 1
+          fi
+          echo "verdict binds plan digest $PLAN_DIGEST"
           result_for_job() {
             jq -r --arg job "$1" '.[$job].result // empty' <<<"$NEEDS_JSON"
           }
+          plan_expects() {
+            [[ "$(jq -r --arg unit "$1" --arg provider "$2" '[.[] | select(.unit_id == $unit) | .providers[] | select(. == $provider)] | length' <<<"$SELECTED_UNITS")" -gt 0 ]]
+          }
+          if ! jq -e --argjson expected "$EXPECTED_CALLERS" '($expected | type == "array") and all($expected[]; type == "object" and (.unit_id | type) == "string" and (.provider | type) == "string" and (.job_id | type) == "string")' -n; then
+            echo "generated required-caller contract is malformed" >&2
+            exit 1
+          fi
+          if ! jq -e --argjson expected "$EXPECTED_CALLERS" 'type == "array" and (map(.unit_id) | unique | length) == length and all(.[]; . as $entry | ($entry | type) == "object" and ($entry.unit_id | type) == "string" and ($entry.unit_id | length) > 0 and ($entry.providers | type) == "array" and ($entry.providers | length) > 0 and (($entry.providers | map(type == "string" and length > 0) | all)) and (($entry.providers | unique | length) == ($entry.providers | length)) and all($entry.providers[]; . as $provider | any($expected[]; .unit_id == $entry.unit_id and .provider == $provider)))' <<<"$SELECTED_UNITS" >/dev/null; then
+            echo "plan selected-unit output contains an unknown, duplicate, empty, or unmapped obligation" >&2
+            exit 1
+          fi
+          if ! jq -e 'type == "object"' <<<"$NEEDS_JSON" >/dev/null; then
+            echo "workflow needs output is malformed" >&2
+            exit 1
+          fi
           result="$(result_for_job plan)"
           if [[ "$result" != success ]]; then
             echo "required CI prerequisite plan did not pass: $result" >&2
             exit 1
           fi
-          selected=",$SELECTED_UNITS,"
-          if [[ "$selected" == *",rust-policy,"* ]]; then
-            result="$(result_for_job github-rust-policy)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-policy" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-policy)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-policy did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-policy was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-policy was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-policy did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-policy ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-policy ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-policy)"
+            result="$(result_for_job github-hosted-rust-policy)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-policy failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-policy succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-policy ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-tablerock-cli,"* ]]; then
-            result="$(result_for_job github-rust-tablerock-cli)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-tablerock-cli" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-tablerock-cli)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-tablerock-cli did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-tablerock-cli was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-tablerock-cli was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-tablerock-cli did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-tablerock-cli ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-tablerock-cli ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-tablerock-cli)"
+            result="$(result_for_job github-hosted-rust-tablerock-cli)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-tablerock-cli failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-tablerock-cli succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-tablerock-cli ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-tablerock-core,"* ]]; then
-            result="$(result_for_job github-rust-tablerock-core)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-tablerock-core" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-tablerock-core)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-tablerock-core did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-tablerock-core was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-tablerock-core was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-tablerock-core did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-tablerock-core ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-tablerock-core ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-tablerock-core)"
+            result="$(result_for_job github-hosted-rust-tablerock-core)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-tablerock-core failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-tablerock-core succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-tablerock-core ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-tablerock-engine,"* ]]; then
-            result="$(result_for_job github-rust-tablerock-engine)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-tablerock-engine" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-tablerock-engine)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-tablerock-engine did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-tablerock-engine was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-tablerock-engine was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-tablerock-engine did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-tablerock-engine ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-tablerock-engine ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-tablerock-engine)"
+            result="$(result_for_job github-hosted-rust-tablerock-engine)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-tablerock-engine failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-tablerock-engine succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-tablerock-engine ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-tablerock-ffi,"* ]]; then
-            result="$(result_for_job github-rust-tablerock-ffi)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-tablerock-ffi" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-tablerock-ffi)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-tablerock-ffi did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-tablerock-ffi was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-tablerock-ffi was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-tablerock-ffi did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-tablerock-ffi ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-tablerock-ffi ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-tablerock-ffi)"
+            result="$(result_for_job github-hosted-rust-tablerock-ffi)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-tablerock-ffi failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-tablerock-ffi succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-tablerock-ffi ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-tablerock-files,"* ]]; then
-            result="$(result_for_job github-rust-tablerock-files)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-tablerock-files" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-tablerock-files)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-tablerock-files did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-tablerock-files was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-tablerock-files was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-tablerock-files did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-tablerock-files ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-tablerock-files ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-tablerock-files)"
+            result="$(result_for_job github-hosted-rust-tablerock-files)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-tablerock-files failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-tablerock-files succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-tablerock-files ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-tablerock-persistence,"* ]]; then
-            result="$(result_for_job github-rust-tablerock-persistence)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-tablerock-persistence" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-tablerock-persistence)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-tablerock-persistence did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-tablerock-persistence was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-tablerock-persistence was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-tablerock-persistence did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-tablerock-persistence ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-tablerock-persistence ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-tablerock-persistence)"
+            result="$(result_for_job github-hosted-rust-tablerock-persistence)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-tablerock-persistence failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-tablerock-persistence succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-tablerock-persistence ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-tablerock-tools,"* ]]; then
-            result="$(result_for_job github-rust-tablerock-tools)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-tablerock-tools" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-tablerock-tools)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-tablerock-tools did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-tablerock-tools was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-tablerock-tools was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-tablerock-tools did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-tablerock-tools ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-tablerock-tools ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-tablerock-tools)"
+            result="$(result_for_job github-hosted-rust-tablerock-tools)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-tablerock-tools failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-tablerock-tools succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-tablerock-tools ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",rust-tablerock-tui,"* ]]; then
-            result="$(result_for_job github-rust-tablerock-tui)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "rust-tablerock-tui" "github-hosted"; then
+            result="$(result_for_job github-hosted-rust-tablerock-tui)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-rust-tablerock-tui did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-rust-tablerock-tui was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-rust-tablerock-tui was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-rust-tablerock-tui did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-rust-tablerock-tui ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-rust-tablerock-tui ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-rust-tablerock-tui)"
+            result="$(result_for_job github-hosted-rust-tablerock-tui)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-rust-tablerock-tui failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-rust-tablerock-tui succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-rust-tablerock-tui ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",swift-package-native,"* ]]; then
-            result="$(result_for_job github-swift-package-native)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "swift-package-native" "github-hosted"; then
+            result="$(result_for_job github-hosted-swift-package-native)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-swift-package-native did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-swift-package-native was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-swift-package-native was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-swift-package-native did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-swift-package-native ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-swift-package-native ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-swift-package-native)"
+            result="$(result_for_job github-hosted-swift-package-native)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-swift-package-native failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-swift-package-native succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-swift-package-native ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
-          if [[ "$selected" == *",swift-xcodeproj-tablerock,"* ]]; then
-            result="$(result_for_job github-swift-xcodeproj-tablerock)"
-            if [[ "$LANE_ADMITTED_GITHUB" == true ]]; then
+          if plan_expects "swift-xcodeproj-tablerock" "github-hosted"; then
+            result="$(result_for_job github-hosted-swift-xcodeproj-tablerock)"
+            if [[ "$PROVIDER_ADMITTED_GITHUB_HOSTED" == true ]]; then
               case "$result" in
                 success) ;;
-                *) echo "selected CI job github-swift-xcodeproj-tablerock did not pass: $result" >&2; exit 1 ;;
+                skipped) echo "expected CI job github-hosted-swift-xcodeproj-tablerock was skipped: a skipped expected result cannot pass" >&2; exit 1 ;;
+                cancelled) echo "expected CI job github-hosted-swift-xcodeproj-tablerock was cancelled: a cancelled expected result cannot pass" >&2; exit 1 ;;
+                *) echo "expected CI job github-hosted-swift-xcodeproj-tablerock did not pass: $result" >&2; exit 1 ;;
               esac
             else
               case "$result" in
                 skipped) ;;
-                *) echo "selected CI job github-swift-xcodeproj-tablerock ran outside its lane admission (LANE_ADMITTED_GITHUB=$LANE_ADMITTED_GITHUB): $result" >&2; exit 1 ;;
+                *) echo "selected CI job github-hosted-swift-xcodeproj-tablerock ran outside its provider admission (PROVIDER_ADMITTED_GITHUB_HOSTED=$PROVIDER_ADMITTED_GITHUB_HOSTED): $result" >&2; exit 1 ;;
               esac
             fi
           else
-            result="$(result_for_job github-swift-xcodeproj-tablerock)"
+            result="$(result_for_job github-hosted-swift-xcodeproj-tablerock)"
             case "$result" in
-              success|skipped) ;;
-              *) echo "unselected CI job github-swift-xcodeproj-tablerock failed unexpectedly: $result" >&2; exit 1 ;;
+              skipped) ;;
+              success) echo "unexpected CI job github-hosted-swift-xcodeproj-tablerock succeeded outside the expected set: the plan did not declare it" >&2; exit 1 ;;
+              *) echo "unexpected CI job github-hosted-swift-xcodeproj-tablerock ran outside the expected set: $result" >&2; exit 1 ;;
             esac
           fi
   required:
     name: "Control / Required"
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     needs: [ci-required]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
