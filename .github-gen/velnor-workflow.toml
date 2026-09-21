@@ -2,7 +2,7 @@ schema = 2
 
 [generator]
 repository = "tailrocks/tablerock"
-revision = "4dec6b9ec28b0d51cb370fd8f5d5401c6186adf0"
+revision = "eed474c4a1d9b071fd1b5de00c769c8997398e5a"
 
 # Public repo: GitHub-hosted singleton (no velnor lanes).
 [workflow]
