@@ -1,0 +1,9 @@
+schema = 1
+
+[workflow]
+policy = "consumer-v1"
+default_branch = "main"
+
+[stacks.rust]
+compile_driver = "mbx"
+test_runner = "cargo_nextest"
