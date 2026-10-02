@@ -10105,6 +10105,7 @@ fn redis_catalog_display_name(node: &CatalogNode) -> String {
         .unwrap_or_else(|| node.name().to_owned())
 }
 
+#[allow(clippy::chunks_exact_to_as_chunks)]
 fn decode_redis_catalog_key(identity: &str) -> Result<Vec<u8>, BridgeError> {
     if let Some(text) = identity.strip_prefix("text:") {
         if text.len() > 8 * 1024 {

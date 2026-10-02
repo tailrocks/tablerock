@@ -1735,7 +1735,7 @@ impl DataGridModel {
 
     /// Append `column` as a secondary sort key (or cycle its direction in place).
     ///
-    /// Unlike [`cycle_sort_column`], does not promote the key to primary. Use
+    /// Unlike [`Self::cycle_sort_column`], does not promote the key to primary. Use
     /// this to build multi-column ORDER BY lists deliberately.
     pub fn push_sort_column(&mut self, column: &str) {
         let existing = self.sort.iter().position(|k| k.column == column);

@@ -1296,7 +1296,7 @@ impl PostgresSession {
 
     /// Direct role membership edges (role → member) from `pg_auth_members`.
     ///
-    /// Bounded by `limit`. Pair with [`RoleMembershipGraph::effective_roles`] for
+    /// Bounded by `limit`. Pair with [`tablerock_core::RoleMembershipGraph::effective_roles`] for
     /// transitive expansion and self-cycle detection.
     pub async fn list_role_memberships(
         &self,
@@ -3778,6 +3778,7 @@ struct NumericHeader<'a> {
     digits: &'a [u8],
 }
 
+#[allow(clippy::chunks_exact_to_as_chunks)]
 impl<'a> NumericHeader<'a> {
     fn parse(raw: &'a [u8]) -> Option<Self> {
         let header: [u8; 8] = raw.get(..8)?.try_into().ok()?;
