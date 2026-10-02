@@ -52,6 +52,7 @@ fn page(engine: Engine, low: u64, type_name: &str, value: i64) -> ResultPage {
     .unwrap()
 }
 
+#[allow(clippy::chunks_exact_to_as_chunks)]
 fn fixture_bytes(file: &str) -> Vec<u8> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../native/Tests/TableRockBridgeTests/Fixtures/PageV1")
