@@ -27,7 +27,7 @@ impl RedisCommandSafety {
     }
 }
 
-/// Tokenized command (argv[0] uppercased).
+/// Tokenized command (`argv[0]` uppercased).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RedisCommandLine {
     pub name: String,
@@ -143,7 +143,7 @@ pub fn tokenize(input: &str) -> Vec<String> {
     out
 }
 
-/// Classify a tokenized argv[0] (case-insensitive).
+/// Classify a tokenized `argv[0]` (case-insensitive).
 #[must_use]
 pub fn classify_command(name: &str) -> RedisCommandSafety {
     if name.is_empty() {

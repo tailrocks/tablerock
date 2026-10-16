@@ -919,7 +919,7 @@ impl WorkbenchModel {
     ///
     /// Completed/failed grids stay inspectable with their prior terminal state;
     /// only live (queued/running/streaming/cancel-*) operations flip to
-    /// [`GridOperationState::Disconnected`].
+    /// [`crate::model::grid::GridOperationState::Disconnected`].
     pub fn mark_disconnected(&mut self) {
         self.context.health_label = "disconnected".into();
         for tab in &mut self.tabs {

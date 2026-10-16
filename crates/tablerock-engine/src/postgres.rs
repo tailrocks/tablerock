@@ -1296,7 +1296,7 @@ impl PostgresSession {
 
     /// Direct role membership edges (role → member) from `pg_auth_members`.
     ///
-    /// Bounded by `limit`. Pair with [`RoleMembershipGraph::effective_roles`] for
+    /// Bounded by `limit`. Pair with [`tablerock_core::RoleMembershipGraph::effective_roles`] for
     /// transitive expansion and self-cycle detection.
     pub async fn list_role_memberships(
         &self,
