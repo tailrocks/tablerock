@@ -3778,7 +3778,6 @@ struct NumericHeader<'a> {
     digits: &'a [u8],
 }
 
-#[allow(clippy::chunks_exact_to_as_chunks)]
 impl<'a> NumericHeader<'a> {
     fn parse(raw: &'a [u8]) -> Option<Self> {
         let header: [u8; 8] = raw.get(..8)?.try_into().ok()?;

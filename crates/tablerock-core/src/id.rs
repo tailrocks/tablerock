@@ -76,7 +76,6 @@ impl IdParts {
     }
 }
 
-#[allow(clippy::chunks_exact_to_as_chunks)]
 fn parse_parts(text: &str) -> Result<IdParts, IdDecodeError> {
     if text.len() != 32 {
         return Err(IdDecodeError::InvalidLength);
