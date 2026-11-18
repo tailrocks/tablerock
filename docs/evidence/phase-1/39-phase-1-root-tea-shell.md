@@ -34,7 +34,7 @@ This checkpoint does not claim terminal lifecycle, live input, panic/signal
 restoration, dirty-frame scheduling, or PTY completion.
 
 External concept: The Elm Architecture and responsive terminal composition only  
-Public sources: <https://ratatui.rs/concepts/application-patterns/the-elm-architecture/> and <https://github.com/tailrocks/termrock/tree/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde>  
+Public sources: <https://ratatui.rs/concepts/application-patterns/the-elm-architecture/> and <https://github.com/tailrocks/termrock-legacy/tree/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde>  
 TableRock requirement: Roadmap Phase 1 / delivery-plan root TEA shell  
 Implementation source: TableRock research decisions, TermRock public API, and independent tests  
 Copied code/assets/text: none

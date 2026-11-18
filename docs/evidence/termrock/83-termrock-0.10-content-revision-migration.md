@@ -32,6 +32,6 @@ non-persisted TermRock caches. No compatibility wrapper or parallel cache exists
 - Workspace tests, Clippy with warnings denied, and rustdoc pass.
 
 External concepts: revision-keyed derived measurement caches
-Public source: <https://github.com/tailrocks/termrock/blob/4b7927335663e0b275588a93ca0ebe6bc4032b0d/migrations/0013-v0.10.0-content-measurement-revisions.md>
+Public source: <https://github.com/tailrocks/termrock-legacy/blob/4b7927335663e0b275588a93ca0ebe6bc4032b0d/migrations/0013-v0.10.0-content-measurement-revisions.md>
 Implementation source: TermRock migration and TableRock consumer audit
 Copied code/assets/text: none

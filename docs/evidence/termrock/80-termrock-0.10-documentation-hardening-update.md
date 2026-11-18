@@ -27,6 +27,6 @@ TermRock migration file and consumer migration evidence.
   interaction geometry, and PTY lifecycle tests pass at the exact revision.
 
 External concepts: complete public API documentation and runnable examples
-Public source: <https://github.com/tailrocks/termrock/tree/1130d8c1d16489b2f510d93bac07f5370ba2cbc7>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/1130d8c1d16489b2f510d93bac07f5370ba2cbc7>
 Implementation source: TermRock-owned documentation; unchanged TableRock consumers
 Copied code/assets/text: none

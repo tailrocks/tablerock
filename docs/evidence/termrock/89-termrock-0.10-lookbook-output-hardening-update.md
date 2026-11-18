@@ -22,6 +22,6 @@ altering TableRock's pinned API or TUI behavior.
 - No TableRock behavior or support claim changes.
 
 External concepts: deterministic generated documentation artifacts
-Public sources: <https://github.com/tailrocks/termrock/commit/534e3c2db8de18da84f0d5a1211c136d0cb2d898>
+Public sources: <https://github.com/tailrocks/termrock-legacy/commit/534e3c2db8de18da84f0d5a1211c136d0cb2d898>
 Implementation source: TermRock upstream lookbook changes and TableRock-owned compatibility inspection
 Copied code/assets/text: none

@@ -3,9 +3,9 @@
 ## Checkpoint
 
 TermRock's neutral `SplitPane` landed on `main` in implementation commit
-[`b6cd8c41`](https://github.com/tailrocks/termrock/commit/b6cd8c4124a95267a9ba5c25e41be917192f4654).
+[`b6cd8c41`](https://github.com/tailrocks/termrock-legacy/commit/b6cd8c4124a95267a9ba5c25e41be917192f4654).
 Compatibility evidence followed in
-[`8cb3c88d`](https://github.com/tailrocks/termrock/commit/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde),
+[`8cb3c88d`](https://github.com/tailrocks/termrock-legacy/commit/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde),
 which is TableRock's new exact dependency revision.
 
 The public primitive maps horizontal/vertical direction, an integer remembered
@@ -44,7 +44,7 @@ T1 `Tree`, `Form`, and `SplitPane` prerequisites are now published. This
 checkpoint does not claim the TableRock executable shell or Phase 1 exit.
 
 External concept: generic resizable pane layout only  
-Public source: <https://github.com/tailrocks/termrock/tree/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde>  
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde>  
 TableRock requirement: Roadmap Phase 1 / delivery-plan TermRock T1  
 Implementation source: TableRock requirements, TermRock public conventions, and independent tests  
 Copied code/assets/text: none

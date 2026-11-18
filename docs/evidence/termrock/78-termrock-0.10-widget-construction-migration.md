@@ -32,6 +32,6 @@ root reducer.
 - Workspace tests, Clippy, and rustdoc pass.
 
 External concepts: constructor/builder widget APIs and forward-compatible public enums
-Public source: <https://github.com/tailrocks/termrock/tree/a3f39b71dd8107041b2941e8e6366ee9037dc7aa>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/a3f39b71dd8107041b2941e8e6366ee9037dc7aa>
 Implementation source: TableRock root view construction migration
 Copied code/assets/text: none

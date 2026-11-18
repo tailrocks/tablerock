@@ -38,6 +38,6 @@ terminal loop, so no premature implementation is retained.
 - No TableRock source, test, or behavior migration is required yet.
 
 External concepts: generic terminal runner responsibility boundary
-Public sources: <https://github.com/tailrocks/termrock/commit/20318221c792ee0a0d0145967321adaee57875ae>
+Public sources: <https://github.com/tailrocks/termrock-legacy/commit/20318221c792ee0a0d0145967321adaee57875ae>
 Implementation source: TermRock upstream lookbook spike and TableRock-owned compatibility inspection
 Copied code/assets/text: none

@@ -36,6 +36,6 @@ their implementation bit pattern as a stable TableRock wire format.
   `KeyChord` use.
 
 External concepts: one backend-neutral input vocabulary
-Public source: <https://github.com/tailrocks/termrock/tree/7d8569dcd549e04ac17a5633196f602b52a134c6>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/7d8569dcd549e04ac17a5633196f602b52a134c6>
 Implementation source: exact pin adaptation only
 Copied code/assets/text: none

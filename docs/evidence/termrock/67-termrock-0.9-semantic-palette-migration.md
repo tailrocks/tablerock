@@ -29,6 +29,6 @@ change. All existing widgets continue receiving the root-owned immutable theme.
 - Workspace build, tests, Clippy, and rustdoc pass.
 
 External concepts: semantic theme roles and consumer-owned product palettes
-Public source: <https://github.com/tailrocks/termrock/tree/4b980aa98bf135eac197fb32cdc58699df2eb62c>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/4b980aa98bf135eac197fb32cdc58699df2eb62c>
 Implementation source: TableRock dependency pin only
 Copied code/assets/text: none

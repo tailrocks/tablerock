@@ -38,7 +38,7 @@ is recorded in `45`.
 
 External concept: scoped terminal restoration under Rust error and unwind only  
 Public sources: <https://doc.rust-lang.org/std/panic/fn.catch_unwind.html> and
-<https://github.com/tailrocks/termrock/tree/9099b3db0c3318fd183d076c4e8f8002a877be6a>  
+<https://github.com/tailrocks/termrock-legacy/tree/9099b3db0c3318fd183d076c4e8f8002a877be6a>  
 TableRock requirement: Roadmap Phase 1 and quality-plan PTY matrix  
 Implementation source: TableRock process boundary, TermRock public session API,
 portable-pty 0.9 public process API, and independent tests  

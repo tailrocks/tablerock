@@ -3,9 +3,9 @@
 ## Checkpoint
 
 TermRock's neutral `Tree` landed on `main` in implementation commit
-[`8a6f7623`](https://github.com/tailrocks/termrock/commit/8a6f76233a539ed126cda36ee2205656c5a8adc7).
+[`8a6f7623`](https://github.com/tailrocks/termrock-legacy/commit/8a6f76233a539ed126cda36ee2205656c5a8adc7).
 Compatibility evidence followed in
-[`cbed106c`](https://github.com/tailrocks/termrock/commit/cbed106c539efbd30dbb9935863e59a7af95bef4),
+[`cbed106c`](https://github.com/tailrocks/termrock-legacy/commit/cbed106c539efbd30dbb9935863e59a7af95bef4),
 which is TableRock's new exact dependency revision.
 
 The public widget consumes a caller-flattened borrowed projection with stable
@@ -40,7 +40,7 @@ This checkpoint does not claim T1 `Form`, T1 `SplitPane`, TableRock catalog
 composition, or the executable shell.
 
 External concept: generic hierarchical navigation only  
-Public source: <https://github.com/tailrocks/termrock/tree/cbed106c539efbd30dbb9935863e59a7af95bef4>  
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/cbed106c539efbd30dbb9935863e59a7af95bef4>  
 TableRock requirement: Roadmap Phase 1 / delivery-plan TermRock T1  
 Implementation source: TableRock requirements, TermRock public conventions, and independent tests  
 Copied code/assets/text: none

@@ -28,6 +28,6 @@ published migration 0025, adopted without a compatibility override layer in
 - No TableRock behavior or support claim changes.
 
 External concepts: copy-on-write keymap storage
-Public sources: <https://github.com/tailrocks/termrock/commit/bbc6c980389e49f4306a8e65a71ce11f280147e7>
+Public sources: <https://github.com/tailrocks/termrock-legacy/commit/bbc6c980389e49f4306a8e65a71ce11f280147e7>
 Implementation source: TermRock upstream test-only prototype and TableRock-owned compatibility inspection
 Copied code/assets/text: none

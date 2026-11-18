@@ -17,7 +17,7 @@ queries, values, mutations, and safety policy never move into TermRock.
 Checked 2026-07-16:
 
 - TermRock `main` at
-  [`c51e11c`](https://github.com/tailrocks/termrock/commit/c51e11cf011da3eba836fa368993bf37c14834ba),
+  [`c51e11c`](https://github.com/tailrocks/termrock-legacy/commit/c51e11cf011da3eba836fa368993bf37c14834ba),
   version `0.9.0`, Rust 1.95 floor, Apache-2.0, Ratatui 0.30 component split,
   optional Crossterm 0.29 adapter, and published neutral `Tree`, `Form`, and
   `SplitPane`;
@@ -28,11 +28,11 @@ Checked 2026-07-16:
   implementation `824783b0`. Later library changes through `f4368a3e` add only
   private tests afterward, so its non-test contract is identical. TableRock
   imports no Jackin product internals;
-- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/c51e11cf011da3eba836fa368993bf37c14834ba/crates/termrock/COMPONENTS.md),
-  [migration index](https://github.com/tailrocks/termrock/blob/c51e11cf011da3eba836fa368993bf37c14834ba/MIGRATING.md),
-  and [interaction conventions](https://github.com/tailrocks/termrock/blob/c51e11cf011da3eba836fa368993bf37c14834ba/docs/content/docs/interaction.mdx)
+- TermRock's [component inventory](https://github.com/tailrocks/termrock-legacy/blob/c51e11cf011da3eba836fa368993bf37c14834ba/crates/termrock/COMPONENTS.md),
+  [migration index](https://github.com/tailrocks/termrock-legacy/blob/c51e11cf011da3eba836fa368993bf37c14834ba/MIGRATING.md),
+  and [interaction conventions](https://github.com/tailrocks/termrock-legacy/blob/c51e11cf011da3eba836fa368993bf37c14834ba/docs/content/docs/interaction.mdx)
   define the current reusable boundary. The
-  [compatibility record](https://github.com/tailrocks/termrock/blob/c51e11cf011da3eba836fa368993bf37c14834ba/compatibility.toml)
+  [compatibility record](https://github.com/tailrocks/termrock-legacy/blob/c51e11cf011da3eba836fa368993bf37c14834ba/compatibility.toml)
   remains historical `0.6.0` Jackin evidence and does not claim Jackin has
   migrated through `0.9.0`;
 - Jackin's [TUI architecture](https://github.com/jackin-project/jackin/blob/27c450e9af7a299171034f98267e0fa26bd3057f/docs/content/docs/reference/tui/architecture.mdx)

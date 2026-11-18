@@ -92,13 +92,13 @@ restoration
 The selected crate is `termrock`. Its project defines product-neutral Ratatui
 components, backend-neutral input, semantic styling, stable interaction IDs,
 and runtime contracts
-([TermRock README](https://github.com/tailrocks/termrock/blob/main/README.md),
-[crate README](https://github.com/tailrocks/termrock/blob/main/crates/termrock/README.md)).
+([TermRock README](https://github.com/tailrocks/termrock-legacy/blob/main/README.md),
+[crate README](https://github.com/tailrocks/termrock-legacy/blob/main/crates/termrock/README.md)).
 
 Current primitives include ActionBar, Backdrop, ChoiceDialog, DetailTable,
 Dialog, DiffView, HintBar, List, MessageDialog, Panel, StatusBar, Tabs,
 TextInput, Toast, and Viewport
-([component inventory](https://github.com/tailrocks/termrock/blob/main/crates/termrock/COMPONENTS.md)).
+([component inventory](https://github.com/tailrocks/termrock-legacy/blob/main/crates/termrock/COMPONENTS.md)).
 
 Missing reusable primitives—Form, Tree, SplitPane, VirtualGrid, TextArea,
 CompletionMenu, Progress, and shared scroll/hit-region behavior—are added to

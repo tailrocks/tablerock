@@ -21,6 +21,6 @@ library API and does not import lookbook internals.
 - No TableRock behavior or support claim changes.
 
 External concepts: interactive component story controls
-Public sources: <https://github.com/tailrocks/termrock/commit/20ef50684f5e0ad9871f667ed425666b5e202a40>
+Public sources: <https://github.com/tailrocks/termrock-legacy/commit/20ef50684f5e0ad9871f667ed425666b5e202a40>
 Implementation source: TermRock upstream lookbook changes and TableRock-owned compatibility inspection
 Copied code/assets/text: none

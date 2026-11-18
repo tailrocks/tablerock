@@ -3,7 +3,7 @@
 ## Checkpoint
 
 TableRock advances its exact TermRock pin to compatibility evidence revision
-[`9099b3db`](https://github.com/tailrocks/termrock/commit/9099b3db0c3318fd183d076c4e8f8002a877be6a).
+[`9099b3db`](https://github.com/tailrocks/termrock-legacy/commit/9099b3db0c3318fd183d076c4e8f8002a877be6a).
 Its lifecycle implementation revision `824783b0` makes a full-screen session the sole
 owner of raw mode, alternate screen, mouse capture, bracketed paste, line
 wrapping, and cursor visibility.
@@ -33,7 +33,7 @@ panic PTY restoration, including raw-termios inspection, in `43`.
 Bounded overflow/resync is recorded in `44`; the completed exit audit is `45`.
 
 External concept: scoped terminal mode ownership only  
-Public source: <https://github.com/tailrocks/termrock/tree/9099b3db0c3318fd183d076c4e8f8002a877be6a>  
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/9099b3db0c3318fd183d076c4e8f8002a877be6a>  
 TableRock requirement: Roadmap Phase 1 / delivery-plan terminal lifecycle  
 Implementation source: TableRock lifecycle requirements, Crossterm commands, TermRock neutral API, and independent tests  
 Copied code/assets/text: none

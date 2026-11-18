@@ -28,6 +28,6 @@ and lockfile update with no compatibility shim or competing input vocabulary.
 - Workspace tests, Clippy, and rustdoc pass.
 
 External concepts: backend-neutral component event contracts
-Public source: <https://github.com/tailrocks/termrock/tree/ff263f2d5fc3964d811daf5122220e6df7f95137>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/ff263f2d5fc3964d811daf5122220e6df7f95137>
 Implementation source: TableRock dependency pin only
 Copied code/assets/text: none

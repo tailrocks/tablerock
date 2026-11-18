@@ -25,6 +25,6 @@ internals.
 - No direct source migration is required.
 
 External concepts: caller-filtered picker composition
-Public sources: <https://github.com/tailrocks/termrock/commit/3a80ef0c4749bd98643bcb42869293bef2cb4733>
+Public sources: <https://github.com/tailrocks/termrock-legacy/commit/3a80ef0c4749bd98643bcb42869293bef2cb4733>
 Implementation source: TermRock upstream lookbook spike and TableRock-owned compatibility inspection
 Copied code/assets/text: none
