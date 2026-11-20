@@ -2,6 +2,7 @@ schema = 1
 
 [workflow]
 policy = "consumer-v1"
+crate_timeout_minutes = 30
 default_branch = "main"
 
 [stacks.rust]

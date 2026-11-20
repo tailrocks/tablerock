@@ -1,6 +1,11 @@
 [tools]
 "cargo:cargo-zigbuild" = "0.23.0"
 zig = "0.16.0"
+mr-boxington = { version = "1.30.0", postinstall = "mbx setup --yes" }
+rust = { version = "1.97.1", profile = "minimal", components = [
+  "clippy",
+  "rustfmt",
+], mr_boxington = true }
 "github:EmbarkStudios/cargo-deny" = "0.20.2"
 "github:kbknapp/cargo-outdated" = "0.19.0"
 "github:rhysd/actionlint" = "v1.7.12"
@@ -13,6 +18,10 @@ zig = "0.16.0"
 [settings]
 idiomatic_version_file_enable_tools = ["rust"]
 lockfile = true
+
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
 
 [tasks.install]
 description = "Provision every pinned tool from mise.lock"
