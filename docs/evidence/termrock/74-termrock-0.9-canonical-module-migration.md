@@ -27,6 +27,6 @@ lockfile; no alias, shim, or competing module vocabulary remains.
 - Workspace tests, Clippy, and rustdoc pass.
 
 External concepts: one canonical public module home per concept
-Public source: <https://github.com/tailrocks/termrock/tree/37d1fda4c334e7c3c9210c3301ff371a3aa8d2ce>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/37d1fda4c334e7c3c9210c3301ff371a3aa8d2ce>
 Implementation source: TableRock dependency pin only
 Copied code/assets/text: none

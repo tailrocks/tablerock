@@ -36,7 +36,7 @@ TermRock widgets own release filtering.
 External concepts: typed terminal requests, closed neutral key vocabulary,
 release filtering.
 
-Public source: <https://github.com/tailrocks/termrock/tree/2f441cc00eff7caecedd49a368aec6aa349d7bc1>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/2f441cc00eff7caecedd49a368aec6aa349d7bc1>
 
 Implementation source: no TableRock behavior copied or translated; this
 checkpoint only adapts the exact dependency pin and records its public API

@@ -21,6 +21,6 @@ focus, tree, table, form, overlay, and text contracts without compatibility
 shims.
 
 External concepts: none; upstream dependency drift inspection only
-Public sources: <https://github.com/tailrocks/termrock/compare/5ff94ee117fd4a1b72fdd0d1b1847815055a93ac...b7f34da8db5842bb439296fe4cde534de0c1eb3c>
+Public sources: <https://github.com/tailrocks/termrock-legacy/compare/5ff94ee117fd4a1b72fdd0d1b1847815055a93ac...b7f34da8db5842bb439296fe4cde534de0c1eb3c>
 Implementation source: exact TermRock main history and TableRock dependency manifests
 Copied code/assets/text: none

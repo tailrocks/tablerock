@@ -63,7 +63,7 @@ forced into one relational abstraction.
 ## Product boundary
 
 TableRock consumes the independent
-[`termrock`](https://github.com/tailrocks/termrock) component project. It never
+[`termrock`](https://github.com/tailrocks/termrock-legacy) component project. It never
 imports `jackin❯` product crates. Every missing reusable interactive primitive
 is designed, tested, documented, reviewed, and merged in TermRock before
 TableRock consumes its exact revision. Database state and policy remain

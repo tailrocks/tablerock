@@ -25,6 +25,6 @@ compatibility shim, or duplicated viewport implementation.
 - Workspace tests, Clippy with warnings denied, and rustdoc pass.
 
 External concepts: viewport-bounded rendering and explicit focus hierarchy
-Public source: <https://github.com/tailrocks/termrock/tree/5c4758b5167241ffef5f501f72bb76bc01e77aba>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/5c4758b5167241ffef5f501f72bb76bc01e77aba>
 Implementation source: TermRock-owned rendering and documentation; unchanged TableRock consumers
 Copied code/assets/text: none

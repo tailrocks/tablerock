@@ -28,6 +28,6 @@ added.
 - Workspace build, tests, Clippy, and rustdoc pass.
 
 External concepts: semantic theme roles and caller-owned palette construction
-Public source: <https://github.com/tailrocks/termrock/tree/4bbb6de377574098c133e32a2f455bebac783c9b>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/4bbb6de377574098c133e32a2f455bebac783c9b>
 Implementation source: TableRock root theme adaptation only
 Copied code/assets/text: none

@@ -17,4 +17,4 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/tailrocks/termrock.git"]
+allow-git = ["https://github.com/tailrocks/termrock-legacy.git"]

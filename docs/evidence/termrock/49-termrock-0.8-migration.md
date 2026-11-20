@@ -64,7 +64,7 @@ is introduced.
   rendering before TableRock adopted it.
 
 External implementation source: none
-Public source: <https://github.com/tailrocks/termrock/tree/da54a033f368ed0888af90ae43d19bcb96fb8581>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/da54a033f368ed0888af90ae43d19bcb96fb8581>
 Migration sources: TermRock `MIGRATING.md`, `migrations/0001-*`, and
 `migrations/0002-*` at the pinned revision
 Copied code/assets/text: none

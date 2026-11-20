@@ -36,6 +36,6 @@ published TermRock features (`crossterm`, `serde`) enabled by the single
 workspace dependency declaration. Source search proves no replaced call site.
 
 External concepts: TermRock public API migration
-Public sources: <https://github.com/tailrocks/termrock/blob/main/MIGRATING.md>, <https://github.com/tailrocks/termrock/tree/main/migrations>
+Public sources: <https://github.com/tailrocks/termrock-legacy/blob/main/MIGRATING.md>, <https://github.com/tailrocks/termrock-legacy/tree/main/migrations>
 Implementation source: TableRock dependency pin and consumer audit
 Copied code/assets/text: none

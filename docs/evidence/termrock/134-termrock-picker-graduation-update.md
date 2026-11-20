@@ -36,6 +36,6 @@ retain a product-local generic picker composition.
 
 Public sources:
 
-- <https://github.com/tailrocks/termrock/commit/4a073ce9d046cb15cc3840fcfe1c91ee1f75a437>
-- <https://github.com/tailrocks/termrock/commit/56b856be6195cdd632c546334016df02fb9aaeff>
-- <https://github.com/tailrocks/termrock/blob/4a073ce9d046cb15cc3840fcfe1c91ee1f75a437/crates/termrock/src/widgets/picker.rs>
+- <https://github.com/tailrocks/termrock-legacy/commit/4a073ce9d046cb15cc3840fcfe1c91ee1f75a437>
+- <https://github.com/tailrocks/termrock-legacy/commit/56b856be6195cdd632c546334016df02fb9aaeff>
+- <https://github.com/tailrocks/termrock-legacy/blob/4a073ce9d046cb15cc3840fcfe1c91ee1f75a437/crates/termrock/src/widgets/picker.rs>

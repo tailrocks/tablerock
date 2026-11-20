@@ -3,9 +3,9 @@
 ## Checkpoint
 
 TermRock's neutral `Form` landed on `main` in implementation commit
-[`176c00f5`](https://github.com/tailrocks/termrock/commit/176c00f5c76d15ddebbd3ed821fa452b0eb62673).
+[`176c00f5`](https://github.com/tailrocks/termrock-legacy/commit/176c00f5c76d15ddebbd3ed821fa452b0eb62673).
 Compatibility evidence followed in
-[`e5bd94e2`](https://github.com/tailrocks/termrock/commit/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b),
+[`e5bd94e2`](https://github.com/tailrocks/termrock-legacy/commit/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b),
 which is TableRock's new exact dependency revision.
 
 The public widget borrows caller-owned sections and stable-ID field
@@ -43,7 +43,7 @@ This checkpoint does not claim T1 `SplitPane`, TableRock connection forms, or
 the executable shell.
 
 External concept: generic structured settings forms only  
-Public source: <https://github.com/tailrocks/termrock/tree/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b>  
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b>  
 TableRock requirement: Roadmap Phase 1 / delivery-plan TermRock T1  
 Implementation source: TableRock requirements, TermRock public conventions, and independent tests  
 Copied code/assets/text: none

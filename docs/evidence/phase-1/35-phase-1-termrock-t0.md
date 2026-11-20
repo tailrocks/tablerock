@@ -74,7 +74,7 @@ example, and tests.
   revision.
 
 External concept: none; neutral library adoption only  
-Public source: <https://github.com/tailrocks/termrock/tree/41482e9fe9b8254f82c7803692ef9dbd7d4cf87c>  
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/41482e9fe9b8254f82c7803692ef9dbd7d4cf87c>  
 TableRock requirement: Roadmap Phase 1 / delivery-plan TermRock T0  
 Implementation source: TermRock public API at the pinned revision and TableRock tests  
 Copied code/assets/text: none

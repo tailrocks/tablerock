@@ -22,6 +22,6 @@ TableRock's English-only product-language rule.
 - No source migration or compatibility layer is required.
 
 External concepts: contract-axis component stories
-Public sources: <https://github.com/tailrocks/termrock/commit/0089bd7bcd99086be1e7c7bf4753a733ef0bd935>
+Public sources: <https://github.com/tailrocks/termrock-legacy/commit/0089bd7bcd99086be1e7c7bf4753a733ef0bd935>
 Implementation source: TermRock upstream lookbook evidence and TableRock-owned compatibility inspection
 Copied code/assets/text: none

@@ -28,6 +28,6 @@ terminal output and remaining open to future option growth.
   exact revision.
 
 External concepts: canonical support surfaces, independent terminal modes, immutable release tags
-Public sources: <https://github.com/tailrocks/termrock/blob/4c3adace5f440e2a5ca737d12bae096ee71b4df9/migrations/0014-v0.10.0-scroll-and-hover-unification.md>, <https://github.com/tailrocks/termrock/blob/4c3adace5f440e2a5ca737d12bae096ee71b4df9/migrations/0015-v0.10.0-independent-session-options.md>
+Public sources: <https://github.com/tailrocks/termrock-legacy/blob/4c3adace5f440e2a5ca737d12bae096ee71b4df9/migrations/0014-v0.10.0-scroll-and-hover-unification.md>, <https://github.com/tailrocks/termrock-legacy/blob/4c3adace5f440e2a5ca737d12bae096ee71b4df9/migrations/0015-v0.10.0-independent-session-options.md>
 Implementation source: TermRock migration documents and TableRock-owned compatibility audit
 Copied code/assets/text: none

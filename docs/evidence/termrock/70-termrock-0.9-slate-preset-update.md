@@ -26,6 +26,6 @@ adaptation is introduced. The root model remains the sole theme owner.
 - Workspace tests, Clippy, and rustdoc pass.
 
 External concepts: complete alternate semantic-theme preset
-Public source: <https://github.com/tailrocks/termrock/tree/a002902d0669cf04fe07d9ffcecbd97f6e58df19>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/a002902d0669cf04fe07d9ffcecbd97f6e58df19>
 Implementation source: TableRock dependency pin only
 Copied code/assets/text: none

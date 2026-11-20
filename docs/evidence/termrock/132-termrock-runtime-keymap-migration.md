@@ -41,4 +41,4 @@ while the right-arrow binding remains a hidden dispatch alias.
 - no external product internals or protected expression were imported
 
 Public source:
-<https://github.com/tailrocks/termrock/blob/0d85cfd17c6f00d7dc279cb6ad92f39e8d6c4f70/migrations/0025-v0.11.0-runtime-configurable-keymaps.md>.
+<https://github.com/tailrocks/termrock-legacy/blob/0d85cfd17c6f00d7dc279cb6ad92f39e8d6c4f70/migrations/0025-v0.11.0-runtime-configurable-keymaps.md>.

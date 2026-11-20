@@ -25,7 +25,7 @@ library does not change without a recorded architecture revision.
 | SSH tunneling | [`russh`](https://github.com/Eugeny/russh) | 0.62.2 | Apache-2.0 | transport adapter below drivers |
 | SQL analysis | [`sqlparser`](https://github.com/apache/datafusion-sqlparser-rs) | 0.62.0 | Apache-2.0 | Rust editor/query service |
 | Find/replace regex | [`regex`](https://github.com/rust-lang/regex) | 1.13.1 | MIT OR Apache-2.0 | core shared find/replace engine for TUI (modes match native TR-SCR-049); no untrusted network patterns |
-| TUI | [`termrock`](https://github.com/tailrocks/termrock) | 0.11.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
+| TUI | [`termrock`](https://github.com/tailrocks/termrock-legacy) | 0.11.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
 | Terminal renderer | [Ratatui](https://github.com/ratatui/ratatui) | 0.30-compatible with pinned TermRock | MIT | through TermRock compatibility tuple |
 | Terminal backend/input | [`crossterm`](https://github.com/crossterm-rs/crossterm) | 0.29.0 | MIT | CLI terminal adapter; TermRock `crossterm` feature |
 | Ratatui terminal backend | [`ratatui-crossterm`](https://github.com/ratatui/ratatui) | 0.1.2 | MIT | CLI render adapter only; Crossterm 0.29 feature only |

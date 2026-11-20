@@ -23,6 +23,6 @@ using its sequential TermRock migration document.
 - No TableRock behavior or support claim changes.
 
 External concepts: none
-Public sources: <https://github.com/tailrocks/termrock/commit/ade6aa0b394b0afac1da0237d83390b9d5441668>
+Public sources: <https://github.com/tailrocks/termrock-legacy/commit/ade6aa0b394b0afac1da0237d83390b9d5441668>
 Implementation source: TermRock upstream planning documents and TableRock-owned compatibility inspection
 Copied code/assets/text: none

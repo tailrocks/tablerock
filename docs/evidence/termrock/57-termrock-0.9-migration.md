@@ -40,7 +40,7 @@ remote commit rather than relying on uncommitted state.
   unchanged.
 
 External concepts: styled glyph span owned by the consumer
-Public source: <https://github.com/tailrocks/termrock/tree/c51e11cf011da3eba836fa368993bf37c14834ba>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/c51e11cf011da3eba836fa368993bf37c14834ba>
 TableRock requirements: research 13, 20, 30, 32, and 33
 Implementation source: TermRock public API and sequential migration 0003
 Copied code/assets/text: none

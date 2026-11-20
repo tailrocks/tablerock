@@ -48,6 +48,6 @@ will not retain a compatibility path.
   latest-pin gates are recorded in the publishing commit.
 
 External concepts: Cargo feature unification, backend-neutral event routing
-Public sources: <https://github.com/tailrocks/termrock/blob/3a80ef0c4749bd98643bcb42869293bef2cb4733/crates/termrock/Cargo.toml>, <https://github.com/tailrocks/termrock/blob/3a80ef0c4749bd98643bcb42869293bef2cb4733/crates/termrock/src/input/event.rs>
+Public sources: <https://github.com/tailrocks/termrock-legacy/blob/3a80ef0c4749bd98643bcb42869293bef2cb4733/crates/termrock/Cargo.toml>, <https://github.com/tailrocks/termrock-legacy/blob/3a80ef0c4749bd98643bcb42869293bef2cb4733/crates/termrock/src/input/event.rs>
 Implementation source: TableRock-owned CLI boundary and pinned TermRock contracts
 Copied code/assets/text: none

@@ -33,6 +33,6 @@ checkpoints begin, not duplicated locally.
 - Workspace tests, Clippy, and rustdoc pass.
 
 External concepts: widget-owned trailing metadata, ordered multi-selection, and reusable progress/log views
-Public source: <https://github.com/tailrocks/termrock/tree/ccf06463382b7ca2ca7734f3d58acdc43366fb54>
+Public source: <https://github.com/tailrocks/termrock-legacy/tree/ccf06463382b7ca2ca7734f3d58acdc43366fb54>
 Implementation source: TableRock dependency pin only
 Copied code/assets/text: none

@@ -46,4 +46,4 @@ one immutable tick per frame and never read the system clock.
 - No external product internals or protected expression were imported.
 
 Public source:
-<https://github.com/tailrocks/termrock/blob/371ff94effaf3363c9671a7f53b0dc606f796b67/migrations/0024-v0.11.0-closure-runner-and-frame-time.md>.
+<https://github.com/tailrocks/termrock-legacy/blob/371ff94effaf3363c9671a7f53b0dc606f796b67/migrations/0024-v0.11.0-closure-runner-and-frame-time.md>.
