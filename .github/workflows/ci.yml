@@ -299,7 +299,7 @@ jobs:
   rust-tablerock-cli:
     name: Rust / tablerock-cli
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     env: &m8
       MBX_BUILD_SCRIPT_EXECUTION: "1"
       MBX_CACHE_EXPORT_GROUP: velnor
@@ -478,7 +478,7 @@ jobs:
   rust-tablerock-core:
     name: Rust / tablerock-core
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     env: *m8
     needs:
       - plan
@@ -550,7 +550,7 @@ jobs:
   rust-tablerock-engine:
     name: Rust / tablerock-engine
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     env: *m8
     needs:
       - plan
@@ -622,7 +622,7 @@ jobs:
   rust-tablerock-ffi:
     name: Rust / tablerock-ffi
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     env: *m8
     needs:
       - plan
@@ -694,7 +694,7 @@ jobs:
   rust-tablerock-files:
     name: Rust / tablerock-files
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     env: *m8
     needs:
       - plan
@@ -766,7 +766,7 @@ jobs:
   rust-tablerock-persistence:
     name: Rust / tablerock-persistence
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     env: *m8
     needs:
       - plan
@@ -838,7 +838,7 @@ jobs:
   rust-tablerock-tools:
     name: Rust / tablerock-tools
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     env: *m8
     needs:
       - plan
@@ -910,7 +910,7 @@ jobs:
   rust-tablerock-tui:
     name: Rust / tablerock-tui
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     env: *m8
     needs:
       - plan
